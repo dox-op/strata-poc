@@ -1,8 +1,7 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
-import { Message } from "ai";
-import { useChat } from "ai/react";
+import { UIMessage, useChat } from "@ai-sdk/react";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import ReactMarkdown, { Options } from "react-markdown";
@@ -11,19 +10,19 @@ import ProjectOverview from "@/components/project-overview";
 import { LoadingIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { getToolName, isToolUIPart } from "ai";
 
 export default function Chat() {
-  const [toolCall, setToolCall] = useState<string>();
-  const { messages, input, handleInputChange, handleSubmit, isLoading } =
-    useChat({
-      maxSteps: 4,
-      onToolCall({ toolCall }) {
-        setToolCall(toolCall.toolName);
-      },
-      onError: (error) => {
-        toast.error("You've been rate limited, please try again later!");
-      },
-    });
+  const { messages, status, sendMessage } = useChat({
+    onToolCall({ toolCall }) {
+      console.log("Tool call:", toolCall);
+    },
+    onError: () => {
+      toast.error("You've been rate limited, please try again later!");
+    },
+  });
+
+  const [input, setInput] = useState("");
 
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
@@ -32,39 +31,84 @@ export default function Chat() {
   }, [messages]);
 
   const currentToolCall = useMemo(() => {
-    const tools = messages?.slice(-1)[0]?.toolInvocations;
-    if (tools && toolCall === tools[0].toolName) {
-      return tools[0].toolName;
-    } else {
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+
+    if (!lastAssistant) {
       return undefined;
     }
-  }, [toolCall, messages]);
 
-  const awaitingResponse = useMemo(() => {
-    if (
-      isLoading &&
-      currentToolCall === undefined &&
-      messages.slice(-1)[0].role === "user"
-    ) {
-      return true;
-    } else {
-      return false;
+    const pendingPart = [...lastAssistant.parts].reverse().find((part) => {
+      if (part.type === "dynamic-tool") {
+        return (
+          part.state !== "output-available" && part.state !== "output-error"
+        );
+      }
+
+      if (!isToolUIPart(part)) {
+        return false;
+      }
+
+      const toolPart = part as { state?: string };
+      return (
+        toolPart.state !== "output-available" &&
+        toolPart.state !== "output-error"
+      );
+    });
+
+    if (!pendingPart) {
+      return undefined;
     }
-  }, [isLoading, currentToolCall, messages]);
 
-  const userQuery: Message | undefined = messages
+    if (pendingPart.type === "dynamic-tool") {
+      return pendingPart.toolName;
+    }
+
+    if (isToolUIPart(pendingPart)) {
+      return getToolName(pendingPart);
+    }
+
+    return undefined;
+  }, [messages]);
+
+  const isAwaitingResponse =
+    status === "submitted" || status === "streaming" || currentToolCall != null;
+
+  const [showLoading, setShowLoading] = useState(isAwaitingResponse);
+
+  useEffect(() => {
+    if (isAwaitingResponse) {
+      setShowLoading(true);
+      return;
+    }
+
+    const timeout = setTimeout(() => setShowLoading(false), 120);
+    return () => clearTimeout(timeout);
+  }, [isAwaitingResponse]);
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    console.log("Submitting form");
+    e.preventDefault();
+    if (input.trim() !== "") {
+      sendMessage({ text: input });
+      setInput("");
+    }
+  };
+
+  const userQuery: UIMessage | undefined = messages
     .filter((m) => m.role === "user")
     .slice(-1)[0];
 
-  const lastAssistantMessage: Message | undefined = messages
+  const lastAssistantMessage: UIMessage | undefined = messages
     .filter((m) => m.role !== "user")
     .slice(-1)[0];
 
   return (
     <div className="flex justify-center items-start sm:pt-16 min-h-screen w-full dark:bg-neutral-900 px-4 md:px-0 py-4">
       <div className="flex flex-col items-center w-full max-w-[500px]">
-      <ProjectOverview />
-      <motion.div
+        <ProjectOverview />
+        <motion.div
           animate={{
             minHeight: isExpanded ? 200 : 0,
             padding: isExpanded ? 12 : 0,
@@ -88,7 +132,7 @@ export default function Chat() {
                 required
                 value={input}
                 placeholder={"Ask me anything..."}
-                onChange={handleInputChange}
+                onChange={(e) => setInput(e.target.value)}
               />
             </form>
             <motion.div
@@ -98,17 +142,23 @@ export default function Chat() {
               className="min-h-fit flex flex-col gap-2"
             >
               <AnimatePresence>
-                {awaitingResponse || currentToolCall ? (
+                {showLoading ? (
                   <div className="px-2 min-h-12">
                     <div className="dark:text-neutral-400 text-neutral-500 text-sm w-fit mb-1">
-                      {userQuery.content}
+                      {userQuery?.parts
+                        .filter((part) => part.type === "text")
+                        .map((part) => part.text)
+                        .join(" ")}
                     </div>
-                    <Loading tool={currentToolCall} />
+                    <Loading tool={currentToolCall ?? undefined} />
                   </div>
                 ) : lastAssistantMessage ? (
                   <div className="px-2 min-h-12">
                     <div className="dark:text-neutral-400 text-neutral-500 text-sm w-fit mb-1">
-                      {userQuery.content}
+                      {userQuery?.parts
+                        .filter((part) => part.type === "text")
+                        .map((part) => part.text)
+                        .join(" ")}
                     </div>
                     <AssistantMessage message={lastAssistantMessage} />
                   </div>
@@ -122,7 +172,7 @@ export default function Chat() {
   );
 }
 
-const AssistantMessage = ({ message }: { message: Message | undefined }) => {
+const AssistantMessage = ({ message }: { message: UIMessage | undefined }) => {
   if (message === undefined) return "HELLO";
 
   return (
@@ -138,7 +188,10 @@ const AssistantMessage = ({ message }: { message: Message | undefined }) => {
         <MemoizedReactMarkdown
           className={"max-h-72 overflow-y-scroll no-scrollbar-gutter"}
         >
-          {message.content}
+          {message.parts
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join(" ")}
         </MemoizedReactMarkdown>
       </motion.div>
     </AnimatePresence>
