@@ -1,0 +1,14 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.1-pg18-trixie
+    container_name: strata-poc
+    restart: always
+    environment:
+      POSTGRES_DB: ${DATABASE_DB}
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    ports:
+      - "${DATABASE_PORT}:5432"
+    volumes:
+      - "${LOCAL_VOLUME_ROOT}:/var/lib/postgresql/18/main"
+      # volume dati persistente
