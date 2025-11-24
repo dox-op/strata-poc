@@ -1,20 +1,97 @@
-import { createResource } from "@/lib/actions/resources";
-import { findRelevantContent } from "@/lib/ai/embedding";
-import {
-  convertToModelMessages,
-  generateObject,
-  stepCountIs,
-  streamText,
-  tool,
-  UIMessage,
-} from "ai";
-import { z } from "zod";
+import {createResource} from "@/lib/actions/resources";
+import {findRelevantContent, type RetrievalContextBlock,} from "@/lib/ai/embedding";
+import {convertToModelMessages, generateObject, stepCountIs, streamText, tool, UIMessage,} from "ai";
+import {z} from "zod";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
+type BitbucketContextMetadata = {
+    source?: string;
+    context?: {
+        repository?: {
+            name?: string;
+            slug?: string;
+        };
+        branch?: {
+            name?: string;
+        };
+        workspace?: {
+            name?: string;
+            slug?: string;
+            uuid?: string;
+        };
+        folderExists?: boolean;
+        truncated?: boolean;
+        files?: Array<{
+            path?: string;
+            content?: string;
+            truncated?: boolean;
+        }>;
+    };
+};
+
+const extractBitbucketContextBlocks = (
+    messages: UIMessage[],
+): RetrievalContextBlock[] => {
+    const blocks: RetrievalContextBlock[] = [];
+    const seen = new Set<string>();
+
+    for (const message of messages) {
+        const metadata = (message.metadata ?? {}) as BitbucketContextMetadata;
+        if (metadata?.source !== "bitbucket-ai-folder") {
+            continue;
+        }
+
+        const context = metadata.context;
+        const files = Array.isArray(context?.files) ? context?.files ?? [] : [];
+
+        if (!files || files.length === 0) {
+            continue;
+        }
+
+        const repositoryName =
+            context?.repository?.name ?? context?.repository?.slug ?? "Repository";
+        const branchName = context?.branch?.name
+            ? ` (${context.branch.name})`
+            : "";
+
+        for (const file of files) {
+            if (!file?.path || typeof file?.content !== "string") {
+                continue;
+            }
+
+            const identifier = `${
+                context?.repository?.slug ?? repositoryName
+            }:${context?.branch?.name ?? "default"}:${file.path}`;
+
+            if (seen.has(identifier)) {
+                continue;
+            }
+
+            seen.add(identifier);
+
+            blocks.push({
+                id: identifier,
+                label: `${repositoryName}${branchName} · ${file.path}`,
+                content: file.content,
+                metadata: {
+                    path: file.path,
+                    truncated: Boolean(file.truncated),
+                    repository: context?.repository,
+                    branch: context?.branch,
+                    workspace: context?.workspace,
+                },
+            });
+        }
+    }
+
+    return blocks;
+};
+
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
+    const bitbucketContextBlocks = extractBitbucketContextBlocks(messages);
 
   const result = streamText({
     model: "openai/gpt-4o",
@@ -51,11 +128,30 @@ export async function POST(req: Request) {
           question: z.string().describe("the users question"),
           similarQuestions: z.array(z.string()).describe("keywords to search"),
         }),
-        execute: async ({ similarQuestions }) => {
+          execute: async ({question, similarQuestions}) => {
+              const searchQueries = [
+                  question,
+                  ...similarQuestions.filter((item) => item.length > 0),
+              ];
+
+              const seenQueries = new Set<string>();
           const results = await Promise.all(
-            similarQuestions.map(
-              async (question) => await findRelevantContent(question),
-            ),
+              searchQueries
+                  .filter((entry) => {
+                      const normalized = entry.trim().toLowerCase();
+                      if (normalized.length === 0 || seenQueries.has(normalized)) {
+                          return false;
+                      }
+                      seenQueries.add(normalized);
+                      return true;
+                  })
+                  .map(
+                      async (entry) =>
+                          await findRelevantContent(entry, {
+                              contextBlocks: bitbucketContextBlocks,
+                              limit: 8,
+                          }),
+                  ),
           );
           // Flatten the array of arrays and remove duplicates based on 'name'
           const uniqueResults = Array.from(

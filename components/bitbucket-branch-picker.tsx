@@ -179,16 +179,12 @@ export const BitbucketBranchPicker = ({
             return;
         }
 
-        const existing = sortedBranches.find(
-            (branch) => branch.id === selectedBranchId,
-        );
-
-        const branchToSelect =
-            existing ?? sortedBranches.find((branch) => branch.isDefault) ?? sortedBranches[0];
-
-        if (!existing || selectedBranchId !== branchToSelect.id) {
-            setSelectedBranchId(branchToSelect.id);
-            onChange?.(branchToSelect);
+        if (
+            selectedBranchId &&
+            !sortedBranches.some((branch) => branch.id === selectedBranchId)
+        ) {
+            setSelectedBranchId(null);
+            onChange?.(null);
         }
     }, [status, sortedBranches, selectedBranchId, onChange]);
 
@@ -258,6 +254,9 @@ export const BitbucketBranchPicker = ({
                     value={selectedBranchId ?? ""}
                     onChange={handleBranchChange}
                 >
+                    <option value="" disabled>
+                        Select a branch
+                    </option>
                     {sortedBranches.map((branch) => (
                         <option key={branch.id} value={branch.id}>
                             {branch.repository.name} · {branch.name}

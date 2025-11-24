@@ -2,7 +2,7 @@
 
 import {Input} from "@/components/ui/input";
 import {UIMessage, useChat} from "@ai-sdk/react";
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {AnimatePresence, motion} from "framer-motion";
 import ReactMarkdown, {Options} from "react-markdown";
 import ProjectOverview from "@/components/project-overview";
@@ -14,7 +14,7 @@ import {type BitbucketProject, BitbucketProjectPicker,} from "@/components/bitbu
 import {type BitbucketBranch, BitbucketBranchPicker,} from "@/components/bitbucket-branch-picker";
 
 export default function Chat() {
-  const { messages, status, sendMessage } = useChat({
+    const {messages, status, sendMessage, setMessages} = useChat({
     onToolCall({ toolCall }) {
       console.log("Tool call:", toolCall);
     },
@@ -29,8 +29,34 @@ export default function Chat() {
         useState<BitbucketProject | null>(null);
     const [selectedBranch, setSelectedBranch] =
         useState<BitbucketBranch | null>(null);
+    const [branchContextState, setBranchContextState] = useState<
+        "idle" | "loading" | "ready" | "missing" | "error"
+    >("idle");
+    const [branchContextError, setBranchContextError] = useState<string | null>(
+        null,
+    );
+    const [branchContextMetadata, setBranchContextMetadata] = useState<{
+        fileCount: number;
+        truncated: boolean;
+    } | null>(null);
+    const branchContextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+        null,
+    );
+    const branchContextAbortControllerRef = useRef<AbortController | null>(null);
+    const branchSelectionKeyRef = useRef<string | null>(null);
 
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
+
+    useEffect(() => {
+        return () => {
+            if (branchContextTimerRef.current) {
+                clearTimeout(branchContextTimerRef.current);
+                branchContextTimerRef.current = null;
+            }
+            branchContextAbortControllerRef.current?.abort();
+            branchContextAbortControllerRef.current = null;
+        };
+    }, []);
 
   useEffect(() => {
     if (messages.length > 0) setIsExpanded(true);
@@ -93,7 +119,323 @@ export default function Chat() {
     return () => clearTimeout(timeout);
   }, [isAwaitingResponse]);
 
-    const canSend = selectedProject != null && selectedBranch != null;
+    useEffect(() => {
+        setInput("");
+    }, [selectedProject?.uuid, selectedBranch?.id]);
+
+    const generateMessageId = useCallback(() => {
+        if (
+            typeof crypto !== "undefined" &&
+            typeof crypto.randomUUID === "function"
+        ) {
+            return crypto.randomUUID();
+        }
+        return Math.random().toString(36).slice(2);
+    }, []);
+
+    const resetChatSession = useCallback(() => {
+        setMessages(() => []);
+    }, [setMessages]);
+
+    const scheduleContextLoad = useCallback(() => {
+        if (!selectedProject || !selectedBranch) {
+            setBranchContextState("idle");
+            setBranchContextError(null);
+            setBranchContextMetadata(null);
+            resetChatSession();
+            return;
+        }
+
+        const workspace =
+            selectedProject.workspace?.slug ?? selectedProject.workspace?.uuid ?? null;
+
+        if (!workspace) {
+            setBranchContextState("error");
+            setBranchContextError(
+                "Unable to determine workspace for the selected project.",
+            );
+            setBranchContextMetadata(null);
+            resetChatSession();
+            return;
+        }
+
+        const branchKey = `${selectedProject.uuid}:${selectedBranch.id}`;
+        branchSelectionKeyRef.current = branchKey;
+        setBranchContextState("loading");
+        setBranchContextError(null);
+        setBranchContextMetadata(null);
+        resetChatSession();
+
+        if (branchContextTimerRef.current) {
+            clearTimeout(branchContextTimerRef.current);
+            branchContextTimerRef.current = null;
+        }
+
+        branchContextAbortControllerRef.current?.abort();
+        branchContextAbortControllerRef.current = null;
+
+        branchContextTimerRef.current = setTimeout(() => {
+            branchContextTimerRef.current = null;
+            const controller = new AbortController();
+            branchContextAbortControllerRef.current = controller;
+
+            const params = new URLSearchParams({
+                workspace,
+                repository: selectedBranch.repository.slug,
+                branch: selectedBranch.name,
+            });
+
+            void (async () => {
+                try {
+                    const response = await fetch(
+                        `/api/bitbucket/ai-folder?${params.toString()}`,
+                        {
+                            credentials: "include",
+                            signal: controller.signal,
+                        },
+                    );
+
+                    if (controller.signal.aborted) {
+                        return;
+                    }
+
+                    if (response.status === 401) {
+                        setBranchContextState("error");
+                        setBranchContextError("Bitbucket session expired. Please reconnect.");
+                        setBranchContextMetadata(null);
+                        resetChatSession();
+                        return;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error("failed_to_fetch_ai_folder");
+                    }
+
+                    const data = (await response.json()) as {
+                        folderExists?: boolean;
+                        files?: Array<{
+                            path: string;
+                            content: string;
+                            truncated?: boolean;
+                        }>;
+                        truncated?: boolean;
+                    };
+
+                    if (
+                        branchSelectionKeyRef.current !== branchKey ||
+                        controller.signal.aborted
+                    ) {
+                        return;
+                    }
+
+                    const files = data.files ?? [];
+                    const projectSnapshot = selectedProject;
+                    const branchSnapshot = selectedBranch;
+
+                    const headerLines = [
+                        projectSnapshot
+                            ? `Project: ${projectSnapshot.name}${
+                                projectSnapshot.key ? ` (${projectSnapshot.key})` : ""
+                            }`
+                            : null,
+                        projectSnapshot?.workspace?.name
+                            ? `Workspace: ${projectSnapshot.workspace.name}`
+                            : projectSnapshot?.workspace?.slug
+                                ? `Workspace: ${projectSnapshot.workspace.slug}`
+                                : null,
+                        `Repository: ${branchSnapshot.repository.name} (${branchSnapshot.repository.slug})`,
+                        `Branch: ${branchSnapshot.name}`,
+                    ].filter(Boolean);
+
+                    const sharedContextMetadata = {
+                        workspace: {
+                            slug: selectedProject.workspace?.slug,
+                            name: selectedProject.workspace?.name,
+                            uuid: selectedProject.workspace?.uuid,
+                        },
+                        project: {
+                            uuid: selectedProject.uuid,
+                            key: selectedProject.key,
+                            name: selectedProject.name,
+                        },
+                        repository: {
+                            name: selectedBranch.repository.name,
+                            slug: selectedBranch.repository.slug,
+                        },
+                        branch: {
+                            name: selectedBranch.name,
+                            isDefault: selectedBranch.isDefault,
+                        },
+                    };
+
+                    if (!data.folderExists) {
+                        const messageText = `${headerLines.join("\n")}\n\nThe ai/ folder was not found in this branch.`;
+                        const message: UIMessage = {
+                            id: generateMessageId(),
+                            role: "user",
+                            parts: [
+                                {
+                                    type: "text",
+                                    text: messageText,
+                                },
+                            ],
+                            metadata: {
+                                source: "bitbucket-ai-folder",
+                                autoGenerated: true,
+                                contextStatus: "missing",
+                                context: {
+                                    ...sharedContextMetadata,
+                                    folderExists: false,
+                                    files: [],
+                                },
+                            },
+                        };
+                        setMessages(() => [message]);
+                        setBranchContextState("missing");
+                        setBranchContextError(null);
+                        setBranchContextMetadata(null);
+                        return;
+                    }
+
+                    if (files.length === 0) {
+                        const messageText = `${headerLines.join("\n")}\n\nThe ai/ folder is empty in this branch.`;
+                        const message: UIMessage = {
+                            id: generateMessageId(),
+                            role: "user",
+                            parts: [
+                                {
+                                    type: "text",
+                                    text: messageText,
+                                },
+                            ],
+                            metadata: {
+                                source: "bitbucket-ai-folder",
+                                autoGenerated: true,
+                                contextStatus: "empty",
+                                context: {
+                                    ...sharedContextMetadata,
+                                    folderExists: true,
+                                    files: [],
+                                },
+                            },
+                        };
+                        setMessages(() => [message]);
+                        setBranchContextState("ready");
+                        setBranchContextError(null);
+                        setBranchContextMetadata({fileCount: 0, truncated: false});
+                        return;
+                    }
+
+                    const notes: string[] = [];
+                    if (data.truncated) {
+                        notes.push(
+                            "Additional files exist in ai/ but were omitted to respect the limit.",
+                        );
+                    }
+
+                    const fileSections = files
+                        .map((file) => {
+                            const sectionLines = [
+                                `### ${file.path}`,
+                                "```",
+                                file.content,
+                                "```",
+                            ];
+                            if (file.truncated) {
+                                sectionLines.push(
+                                    "_Note: File content truncated to 100kB for preview._",
+                                );
+                            }
+                            return sectionLines.join("\n");
+                        })
+                        .join("\n\n");
+
+                    const messageLines = [
+                        ...headerLines,
+                        `Loaded files: ${files.length}`,
+                        notes.length > 0 ? notes.join(" ") : null,
+                        "",
+                        fileSections,
+                    ].filter((line) => line != null && line !== "");
+
+                    const message: UIMessage = {
+                        id: generateMessageId(),
+                        role: "user",
+                        parts: [
+                            {
+                                type: "text",
+                                text: messageLines.join("\n\n"),
+                            },
+                        ],
+                        metadata: {
+                            source: "bitbucket-ai-folder",
+                            autoGenerated: true,
+                            contextStatus: "ready",
+                            context: {
+                                ...sharedContextMetadata,
+                                folderExists: true,
+                                files: files.map((file) => ({
+                                    path: file.path,
+                                    content: file.content,
+                                    truncated: Boolean(file.truncated),
+                                })),
+                                truncated: Boolean(data.truncated),
+                            },
+                        },
+                    };
+
+                    setMessages(() => [message]);
+                    setBranchContextState("ready");
+                    setBranchContextError(null);
+                    setBranchContextMetadata({
+                        fileCount: files.length,
+                        truncated: Boolean(data.truncated),
+                    });
+                } catch (error) {
+                    if (
+                        controller.signal.aborted ||
+                        branchSelectionKeyRef.current !== branchKey
+                    ) {
+                        return;
+                    }
+
+                    console.error("Failed to hydrate ai/ context", error);
+                    setBranchContextState("error");
+                    setBranchContextError("Unable to load repository context.");
+                    setBranchContextMetadata(null);
+                    resetChatSession();
+                } finally {
+                    if (
+                        branchSelectionKeyRef.current === branchKey &&
+                        !controller.signal.aborted
+                    ) {
+                        branchContextAbortControllerRef.current = null;
+                    }
+                }
+            })();
+        }, 2000);
+    }, [
+        generateMessageId,
+        resetChatSession,
+        selectedBranch,
+        selectedProject,
+        setMessages,
+    ]);
+
+    useEffect(() => {
+        if (branchContextTimerRef.current) {
+            clearTimeout(branchContextTimerRef.current);
+            branchContextTimerRef.current = null;
+        }
+        branchContextAbortControllerRef.current?.abort();
+        branchContextAbortControllerRef.current = null;
+        scheduleContextLoad();
+    }, [scheduleContextLoad]);
+
+    const canSend =
+        selectedProject != null &&
+        selectedBranch != null &&
+        branchContextState !== "loading";
     const isInputDisabled = !canSend;
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -145,11 +487,32 @@ export default function Chat() {
                   }}
               />
               {selectedProject ? (
-                  <BitbucketBranchPicker
-                      project={selectedProject}
-                      value={selectedBranch?.id ?? null}
-                      onChange={setSelectedBranch}
-                  />
+                  <>
+                      <BitbucketBranchPicker
+                          project={selectedProject}
+                          value={selectedBranch?.id ?? null}
+                          onChange={setSelectedBranch}
+                      />
+                      {branchContextState === "loading" ? (
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                              Preparing repository context…
+                          </p>
+                      ) : null}
+                      {branchContextState === "ready" && branchContextMetadata ? (
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                              Loaded ai/ folder ({branchContextMetadata.fileCount}
+                              {branchContextMetadata.truncated ? "+" : ""} files).
+                          </p>
+                      ) : null}
+                      {branchContextState === "missing" ? (
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                              No ai/ folder found for this branch. You can still continue.
+                          </p>
+                      ) : null}
+                      {branchContextState === "error" && branchContextError ? (
+                          <p className="text-xs text-red-500">{branchContextError}</p>
+                      ) : null}
+                  </>
               ) : null}
             <form onSubmit={handleSubmit} className="flex space-x-2">
               <Input
