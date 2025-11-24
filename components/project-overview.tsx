@@ -16,7 +16,19 @@ const ProjectOverview = () => {
           <span>+</span>
           <InformationIcon />
         </p>
-          <p>Ciao</p>
+          <p>
+              Strata POC is a passive-to-active chat assistant that syncs Bitbucket
+              sessions with a persistency layer. Pick a project + branch, decide if the
+              AI can write to <code>ai/</code>, and chat. When allowed, responses can be
+              staged into drafts and pushed via auto-generated pull requests so every
+              change stays reviewable.
+          </p>
+          <p>
+              Context comes from the repository’s <code>ai/</code> directory, which we
+              index and feed into the model. Any write operation is gated by your
+              session preference and always limited to that folder, ensuring the rest
+              of the codebase stays untouched.
+          </p>
       </div>
     </motion.div>
   );

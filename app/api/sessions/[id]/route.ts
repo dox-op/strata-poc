@@ -14,11 +14,10 @@ const updateSessionSchema = z.object({
     allowPersist: z.boolean().optional(),
 });
 
-export async function GET(
-    request: NextRequest,
-    {params}: { params: { id?: string } },
-) {
-    const sessionId = params.id;
+type RouteParams = { params: Promise<{ id?: string }> }
+
+export async function GET(request: NextRequest, {params}: RouteParams) {
+    const {id: sessionId} = await params;
 
     if (!sessionId) {
         return NextResponse.json({error: "session_id_required"}, {status: 400});
@@ -83,9 +82,9 @@ export async function GET(
 
 export async function PATCH(
     request: NextRequest,
-    {params}: { params: { id?: string } },
+    {params}: RouteParams,
 ) {
-    const sessionId = params.id;
+    const {id: sessionId} = await params;
 
     if (!sessionId) {
         return NextResponse.json({error: "session_id_required"}, {status: 400});
