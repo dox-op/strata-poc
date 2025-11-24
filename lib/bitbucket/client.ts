@@ -7,6 +7,7 @@ export type BitbucketSession = {
     accessToken: string;
     refreshToken: string;
     expiresAt: number;
+    sessionId: string;
 };
 
 export type BitbucketDirectoryEntry = {
@@ -83,6 +84,7 @@ export const refreshAccessToken = async (
     }
 
     return {
+        ...session,
         accessToken: json.access_token,
         refreshToken: json.refresh_token,
         expiresAt: Date.now() + json.expires_in * 1000,

@@ -2,6 +2,7 @@
 
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
+import {SearchableSelect} from "@/components/ui/searchable-select";
 import {UIMessage, useChat} from "@ai-sdk/react";
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {AnimatePresence, motion} from "framer-motion";
@@ -113,6 +114,18 @@ export default function Chat() {
 
     const [input, setInput] = useState("");
 
+    const sessionUpdatedFormatter = useMemo(
+        () =>
+            new Intl.DateTimeFormat(undefined, {
+                month: "short",
+                day: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+            }),
+        [],
+    );
+
     const sessionCreationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
         null,
     );
@@ -197,6 +210,42 @@ export default function Chat() {
             },
         }),
         [],
+    );
+
+    const sessionOptions = useMemo(
+        () => [
+            {
+                value: NEW_SESSION_OPTION,
+                label: "Create new session",
+                description: "Start from a Bitbucket project and branch",
+                searchText: "create new session start",
+            },
+            ...sessions.map((session) => {
+                const updatedAt = new Date(session.updatedAt);
+                const formattedLabel = Number.isNaN(updatedAt.getTime())
+                    ? session.label
+                    : `${session.label} · ${sessionUpdatedFormatter.format(updatedAt)}`;
+
+                return {
+                    value: session.id,
+                    label: formattedLabel,
+                    description: `${session.project.name} · ${session.branch.name}`,
+                    searchText: [
+                        session.label,
+                        session.project.name,
+                        session.project.key,
+                        session.workspace.name,
+                        session.workspace.slug,
+                        session.repository.name,
+                        session.repository.slug,
+                        session.branch.name,
+                    ]
+                        .filter(Boolean)
+                        .join(" "),
+                };
+            }),
+        ],
+        [sessions, sessionUpdatedFormatter],
     );
 
     const applySessionContext = useCallback(
@@ -620,8 +669,7 @@ export default function Chat() {
 
     const isInputDisabled = !canSend;
 
-    const handleSessionSelect = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const value = event.target.value as SessionSelectValue;
+    const handleSessionSelect = (value: SessionSelectValue) => {
         if (value === NEW_SESSION_OPTION) {
             setSelectedSessionId(NEW_SESSION_OPTION);
             setSelectedProject(null);
@@ -686,19 +734,17 @@ export default function Chat() {
                   >
                       Session
                   </Label>
-                  <select
+                  <SearchableSelect
                       id="session-picker"
-                      className="w-full rounded-md border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-800 outline-none transition focus:border-neutral-400 focus:ring-0 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
                       value={selectedSessionId}
-                      onChange={handleSessionSelect}
-                  >
-                      <option value={NEW_SESSION_OPTION}>Create new session</option>
-                      {sessions.map((session) => (
-                          <option key={session.id} value={session.id}>
-                              {session.label}
-                          </option>
-                      ))}
-                  </select>
+                      onChange={(nextValue) =>
+                          handleSessionSelect(nextValue as SessionSelectValue)
+                      }
+                      options={sessionOptions}
+                      placeholder="Choose a session"
+                      searchPlaceholder="Search sessions..."
+                      emptyMessage="No sessions found."
+                  />
               </div>
 
               {selectedSessionId === NEW_SESSION_OPTION ? (

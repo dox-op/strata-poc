@@ -1,5 +1,5 @@
 import {Buffer} from "node:buffer";
-import {createHmac, timingSafeEqual} from "node:crypto";
+import {createHmac, randomUUID, timingSafeEqual} from "node:crypto";
 import {NextRequest, NextResponse} from "next/server";
 import {cookies} from "next/headers";
 import {env} from "@/lib/env.mjs";
@@ -135,6 +135,7 @@ export async function GET(request: NextRequest) {
         accessToken: tokenJson.access_token,
         refreshToken: tokenJson.refresh_token,
         expiresAt: Date.now() + tokenJson.expires_in * 1000,
+        sessionId: randomUUID(),
     });
 
     cookieStore.set(SESSION_COOKIE, sessionPayload, {

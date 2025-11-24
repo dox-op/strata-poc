@@ -3,6 +3,8 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {Button} from "@/components/ui/button";
 import {Label} from "@/components/ui/label";
+import {RotateCw} from "lucide-react";
+import {SearchableSelect} from "@/components/ui/searchable-select";
 
 export type BitbucketProject = {
     uuid: string;
@@ -39,6 +41,7 @@ export const BitbucketProjectPicker = ({
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
         value ?? null,
     );
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const sortedProjects = useMemo(
         () =>
@@ -48,44 +51,79 @@ export const BitbucketProjectPicker = ({
         [projects],
     );
 
-    const loadProjects = useCallback(async () => {
-        setStatus("loading");
-        try {
-            const response = await fetch("/api/bitbucket/projects", {
-                credentials: "include",
-            });
+    const projectOptions = useMemo(
+        () =>
+            sortedProjects.map((project) => ({
+                value: project.uuid,
+                label: project.name,
+                description:
+                    project.workspace?.name ??
+                    project.workspace?.slug ??
+                    project.key,
+                searchText: [
+                    project.name,
+                    project.key,
+                    project.workspace?.name,
+                    project.workspace?.slug,
+                ]
+                    .filter(Boolean)
+                    .join(" "),
+            })),
+        [sortedProjects],
+    );
 
-            if (response.status === 401) {
+    const loadProjects = useCallback(
+        async (options?: { forceRefresh?: boolean; silent?: boolean }) => {
+            const shouldSilent = options?.silent ?? false;
+            if (!shouldSilent) {
+                setStatus("loading");
+            } else {
+                setIsRefreshing(true);
+            }
+
+            try {
+                const endpoint = options?.forceRefresh
+                    ? "/api/bitbucket/projects?refresh=1"
+                    : "/api/bitbucket/projects";
+                const response = await fetch(endpoint, {
+                    credentials: "include",
+                });
+
+                if (response.status === 401) {
+                    setProjects([]);
+                    setStatus("disconnected");
+                    setSelectedProjectId(null);
+                    onChange?.(null);
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error("failed_to_load_projects");
+                }
+
+                const data = (await response.json()) as {
+                    projects?: BitbucketProject[];
+                };
+
+                if (!data.projects) {
+                    setProjects([]);
+                    setStatus("linked");
+                    return;
+                }
+
+                setProjects(data.projects);
+                setStatus("linked");
+            } catch (error) {
+                setStatus("error");
                 setProjects([]);
-                setStatus("disconnected");
                 setSelectedProjectId(null);
                 onChange?.(null);
-                return;
+            } finally {
+                setIsRefreshing(false);
             }
-
-            if (!response.ok) {
-                throw new Error("failed_to_load_projects");
-            }
-
-            const data = (await response.json()) as {
-                projects?: BitbucketProject[];
-            };
-
-            if (!data.projects) {
-                setProjects([]);
-                setStatus("linked");
-                return;
-            }
-
-            setProjects(data.projects);
-            setStatus("linked");
-        } catch (error) {
-            setStatus("error");
-            setProjects([]);
-            setSelectedProjectId(null);
-            onChange?.(null);
-        }
-    }, [onChange]);
+        },
+        [onChange],
+    );
 
     useEffect(() => {
         void loadProjects();
@@ -132,9 +170,9 @@ export const BitbucketProjectPicker = ({
         }
     }, [status, sortedProjects, selectedProjectId, onChange]);
 
-    const handleProjectChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const handleProjectChange = (projectId: string) => {
         const selected = sortedProjects.find(
-            (project) => project.uuid === event.target.value,
+            (project) => project.uuid === projectId,
         );
         setSelectedProjectId(selected?.uuid ?? null);
         onChange?.(selected ?? null);
@@ -179,23 +217,35 @@ export const BitbucketProjectPicker = ({
             )}
 
             {status === "linked" && sortedProjects.length > 0 && (
-                <select
-                    id="bitbucket-project"
-                    className="w-full rounded-md border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-800 outline-none transition focus:border-neutral-400 focus:ring-0 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-                    value={selectedProjectId ?? ""}
-                    onChange={handleProjectChange}
-                >
-                    {sortedProjects.map((project) => (
-                        <option key={project.uuid} value={project.uuid}>
-                            {project.name}
-                            {project.workspace?.name
-                                ? ` · ${project.workspace.name}`
-                                : project.workspace?.slug
-                                    ? ` · ${project.workspace.slug}`
-                                    : ""}
-                        </option>
-                    ))}
-                </select>
+                <div className="flex items-center gap-2">
+                    <SearchableSelect
+                        id="bitbucket-project"
+                        value={selectedProjectId}
+                        onChange={handleProjectChange}
+                        options={projectOptions}
+                        placeholder="Select a Bitbucket project"
+                        searchPlaceholder="Search projects..."
+                        emptyMessage="No projects match your search."
+                        className="flex-1"
+                    />
+                    <button
+                        type="button"
+                        aria-label="Refresh Bitbucket projects"
+                        title="Refresh projects"
+                        disabled={isRefreshing}
+                        onClick={() =>
+                            void loadProjects({
+                                forceRefresh: true,
+                                silent: sortedProjects.length > 0,
+                            })
+                        }
+                        className="group inline-flex h-10 w-10 flex-none items-center justify-center rounded-md border border-neutral-200 bg-neutral-100 text-neutral-600 transition hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:text-white dark:focus-visible:ring-neutral-600"
+                    >
+                        <RotateCw
+                            className={`h-4 w-4 transition-transform duration-300 group-hover:rotate-[360deg] ${isRefreshing ? "animate-spin" : ""}`}
+                        />
+                    </button>
+                </div>
             )}
 
             {status === "linked" && sortedProjects.length === 0 && (

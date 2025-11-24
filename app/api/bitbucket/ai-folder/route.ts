@@ -1,15 +1,11 @@
 import {NextRequest, NextResponse} from "next/server";
-import {cookies} from "next/headers";
 import {
     assertBitbucketConfig,
     BITBUCKET_SESSION_COOKIE,
-    type BitbucketSession,
     fetchAiFolderListing,
     fetchFileContent,
-    refreshAccessToken,
 } from "@/lib/bitbucket/client";
-
-const isProduction = process.env.NODE_ENV === "production";
+import {ensureFreshSession, readBitbucketSession} from "@/app/api/sessions/utils";
 
 type AiFolderContent = {
     path: string;
@@ -41,39 +37,14 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    const cookieStore = await cookies();
-    const rawSession = cookieStore.get(BITBUCKET_SESSION_COOKIE)?.value;
-
+    const {session: rawSession, cookieStore} = await readBitbucketSession();
     if (!rawSession) {
         return NextResponse.json({linked: false, files: []}, {status: 401});
     }
 
-    let session: BitbucketSession;
-    try {
-        session = JSON.parse(rawSession) as BitbucketSession;
-    } catch (error) {
-        cookieStore.delete(BITBUCKET_SESSION_COOKIE);
+    const session = await ensureFreshSession(rawSession, cookieStore);
+    if (!session) {
         return NextResponse.json({linked: false, files: []}, {status: 401});
-    }
-
-    if (Date.now() >= session.expiresAt - 60 * 1000) {
-        const refreshed = await refreshAccessToken(session);
-        if (!refreshed) {
-            cookieStore.delete(BITBUCKET_SESSION_COOKIE);
-            return NextResponse.json(
-                {linked: false, files: []},
-                {status: 401},
-            );
-        }
-
-        session = refreshed;
-        cookieStore.set(BITBUCKET_SESSION_COOKIE, JSON.stringify(session), {
-            httpOnly: true,
-            sameSite: "lax",
-            secure: isProduction,
-            path: "/",
-            maxAge: 30 * 24 * 60 * 60,
-        });
     }
 
     try {
