@@ -28,7 +28,7 @@ export async function GET() {
         client_id: env.BITBUCKET_CLIENT_ID,
         response_type: "code",
         state: encodedState,
-        scope: "account project",
+        scope: "account project repository:read",
         redirect_uri: env.BITBUCKET_REDIRECT_URI,
     });
 

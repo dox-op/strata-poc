@@ -11,6 +11,7 @@ import {cn} from "@/lib/utils";
 import {toast} from "sonner";
 import {getToolName, isToolUIPart} from "ai";
 import {type BitbucketProject, BitbucketProjectPicker,} from "@/components/bitbucket-project-picker";
+import {type BitbucketBranch, BitbucketBranchPicker,} from "@/components/bitbucket-branch-picker";
 
 export default function Chat() {
   const { messages, status, sendMessage } = useChat({
@@ -26,6 +27,8 @@ export default function Chat() {
 
     const [selectedProject, setSelectedProject] =
         useState<BitbucketProject | null>(null);
+    const [selectedBranch, setSelectedBranch] =
+        useState<BitbucketBranch | null>(null);
 
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
@@ -90,9 +93,15 @@ export default function Chat() {
     return () => clearTimeout(timeout);
   }, [isAwaitingResponse]);
 
+    const canSend = selectedProject != null && selectedBranch != null;
+    const isInputDisabled = !canSend;
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     console.log("Submitting form");
     e.preventDefault();
+      if (!canSend) {
+          return;
+      }
     if (input.trim() !== "") {
       sendMessage({ text: input });
       setInput("");
@@ -130,8 +139,18 @@ export default function Chat() {
           <div className="flex flex-col w-full justify-between gap-2">
               <BitbucketProjectPicker
                   value={selectedProject?.uuid ?? null}
-                  onChange={setSelectedProject}
+                  onChange={(project) => {
+                      setSelectedProject(project);
+                      setSelectedBranch(null);
+                  }}
               />
+              {selectedProject ? (
+                  <BitbucketBranchPicker
+                      project={selectedProject}
+                      value={selectedBranch?.id ?? null}
+                      onChange={setSelectedBranch}
+                  />
+              ) : null}
             <form onSubmit={handleSubmit} className="flex space-x-2">
               <Input
                 className={`bg-neutral-100 text-base w-full text-neutral-700 dark:bg-neutral-700 dark:placeholder:text-neutral-400 dark:text-neutral-300`}
@@ -140,6 +159,7 @@ export default function Chat() {
                 value={input}
                 placeholder={"Ask me anything..."}
                 onChange={(e) => setInput(e.target.value)}
+                disabled={isInputDisabled}
               />
             </form>
             <motion.div
