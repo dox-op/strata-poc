@@ -1,5 +1,5 @@
 import {nanoid} from "@/lib/utils";
-import {boolean, jsonb, pgTable, text, timestamp, varchar} from "drizzle-orm/pg-core";
+import {boolean, integer, jsonb, pgTable, text, timestamp, varchar,} from "drizzle-orm/pg-core";
 
 export const sessions = pgTable("sessions", {
     id: varchar("id", {length: 191})
@@ -24,6 +24,14 @@ export const sessions = pgTable("sessions", {
         content: string;
         truncated: boolean;
     }>>(),
+    persistAllowWrites: boolean("persist_allow_writes").default(false).notNull(),
+    persistHasChanges: boolean("persist_has_changes").default(false).notNull(),
+    persistDraftCount: integer("persist_draft_count").default(0).notNull(),
+    persistPrId: varchar("persist_pr_id", {length: 191}),
+    persistPrUrl: text("persist_pr_url"),
+    persistPrBranch: varchar("persist_pr_branch", {length: 191}),
+    persistPrTitle: text("persist_pr_title"),
+    persistUpdatedAt: timestamp("persist_updated_at", {withTimezone: false}),
     createdAt: timestamp("created_at", {withTimezone: false})
         .defaultNow()
         .notNull(),

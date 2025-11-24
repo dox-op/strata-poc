@@ -5,7 +5,6 @@ import {Button} from "@/components/ui/button";
 import {Label} from "@/components/ui/label";
 import {SearchableSelect} from "@/components/ui/searchable-select";
 import {BitbucketProject} from "@/components/bitbucket-project-picker";
-import {RotateCw} from "lucide-react";
 
 export type BitbucketBranch = {
     id: string;
@@ -39,7 +38,6 @@ export const BitbucketBranchPicker = ({
                                       }: BitbucketBranchPickerProps) => {
     const [status, setStatus] = useState<Status>("idle");
     const [branches, setBranches] = useState<BitbucketBranch[]>([]);
-    const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
         value ?? null,
     );
@@ -119,11 +117,8 @@ export const BitbucketBranchPicker = ({
                 return;
             }
 
-            const shouldSilent = options?.silent ?? false;
-            if (!shouldSilent) {
+            if (!options?.silent) {
                 setStatus("loading");
-            } else {
-                setIsRefreshing(true);
             }
 
             const params = new URLSearchParams({
@@ -188,8 +183,6 @@ export const BitbucketBranchPicker = ({
                     setSelectedBranchId(null);
                     onChange?.(null);
                 }
-            } finally {
-                setIsRefreshing(false);
             }
         },
         [project, onChange],
@@ -283,35 +276,21 @@ export const BitbucketBranchPicker = ({
             {status === "empty" && <BranchesEmptyState/>}
 
             {status === "ready" && sortedBranches.length > 0 && (
-                <div className="flex items-center gap-2">
-                    <SearchableSelect
-                        id="bitbucket-branch"
-                        value={selectedBranchId}
-                        onChange={handleBranchChange}
-                        options={branchOptions}
-                        placeholder="Select a branch"
-                        searchPlaceholder="Search branches..."
-                        emptyMessage="No branches match your search."
-                        className="flex-1"
-                    />
-                    <button
-                        type="button"
-                        aria-label="Refresh Bitbucket branches"
-                        title="Refresh branches"
-                        disabled={isRefreshing}
-                        onClick={() =>
-                            void loadBranches({
-                                forceRefresh: true,
-                                silent: sortedBranches.length > 0,
-                            })
-                        }
-                        className="group inline-flex h-10 w-10 flex-none items-center justify-center rounded-md border border-neutral-200 bg-neutral-100 text-neutral-600 transition hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:text-white dark:focus-visible:ring-neutral-600"
-                    >
-                        <RotateCw
-                            className={`h-4 w-4 transition-transform duration-300 group-hover:rotate-[360deg] ${isRefreshing ? "animate-spin" : ""}`}
-                        />
-                    </button>
-                </div>
+                <SearchableSelect
+                    id="bitbucket-branch"
+                    value={selectedBranchId}
+                    onChange={handleBranchChange}
+                    options={branchOptions}
+                    placeholder="Select a branch"
+                    searchPlaceholder="Search branches..."
+                    emptyMessage="No branches match your search."
+                    onReload={() =>
+                        loadBranches({
+                            forceRefresh: true,
+                            silent: sortedBranches.length > 0,
+                        })
+                    }
+                />
             )}
         </div>
     );

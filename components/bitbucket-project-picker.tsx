@@ -3,7 +3,6 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {Button} from "@/components/ui/button";
 import {Label} from "@/components/ui/label";
-import {RotateCw} from "lucide-react";
 import {SearchableSelect} from "@/components/ui/searchable-select";
 
 export type BitbucketProject = {
@@ -41,7 +40,6 @@ export const BitbucketProjectPicker = ({
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
         value ?? null,
     );
-    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const sortedProjects = useMemo(
         () =>
@@ -74,11 +72,8 @@ export const BitbucketProjectPicker = ({
 
     const loadProjects = useCallback(
         async (options?: { forceRefresh?: boolean; silent?: boolean }) => {
-            const shouldSilent = options?.silent ?? false;
-            if (!shouldSilent) {
+            if (!options?.silent) {
                 setStatus("loading");
-            } else {
-                setIsRefreshing(true);
             }
 
             try {
@@ -118,8 +113,6 @@ export const BitbucketProjectPicker = ({
                 setProjects([]);
                 setSelectedProjectId(null);
                 onChange?.(null);
-            } finally {
-                setIsRefreshing(false);
             }
         },
         [onChange],
@@ -217,35 +210,21 @@ export const BitbucketProjectPicker = ({
             )}
 
             {status === "linked" && sortedProjects.length > 0 && (
-                <div className="flex items-center gap-2">
-                    <SearchableSelect
-                        id="bitbucket-project"
-                        value={selectedProjectId}
-                        onChange={handleProjectChange}
-                        options={projectOptions}
-                        placeholder="Select a Bitbucket project"
-                        searchPlaceholder="Search projects..."
-                        emptyMessage="No projects match your search."
-                        className="flex-1"
-                    />
-                    <button
-                        type="button"
-                        aria-label="Refresh Bitbucket projects"
-                        title="Refresh projects"
-                        disabled={isRefreshing}
-                        onClick={() =>
-                            void loadProjects({
-                                forceRefresh: true,
-                                silent: sortedProjects.length > 0,
-                            })
-                        }
-                        className="group inline-flex h-10 w-10 flex-none items-center justify-center rounded-md border border-neutral-200 bg-neutral-100 text-neutral-600 transition hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:text-white dark:focus-visible:ring-neutral-600"
-                    >
-                        <RotateCw
-                            className={`h-4 w-4 transition-transform duration-300 group-hover:rotate-[360deg] ${isRefreshing ? "animate-spin" : ""}`}
-                        />
-                    </button>
-                </div>
+                <SearchableSelect
+                    id="bitbucket-project"
+                    value={selectedProjectId}
+                    onChange={handleProjectChange}
+                    options={projectOptions}
+                    placeholder="Select a Bitbucket project"
+                    searchPlaceholder="Search projects..."
+                    emptyMessage="No projects match your search."
+                    onReload={() =>
+                        loadProjects({
+                            forceRefresh: true,
+                            silent: sortedProjects.length > 0,
+                        })
+                    }
+                />
             )}
 
             {status === "linked" && sortedProjects.length === 0 && (

@@ -1,8 +1,8 @@
 "use client";
 
 import type {ReactNode} from "react";
-import {useEffect, useMemo, useRef, useState} from "react";
-import {Check, ChevronsUpDown} from "lucide-react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {Check, ChevronsUpDown, Loader2, RotateCw} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {cn} from "@/lib/utils";
@@ -25,6 +25,8 @@ interface SearchableSelectProps {
     options: SearchableSelectOption[];
     disabled?: boolean;
     className?: string;
+    onReload?: () => Promise<void> | void;
+    loadingMessage?: string;
 }
 
 export const SearchableSelect = ({
@@ -37,9 +39,12 @@ export const SearchableSelect = ({
                                      options,
                                      disabled = false,
                                      className,
+                                     onReload,
+                                     loadingMessage = "Refreshing options…",
                                  }: SearchableSelectProps) => {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
+    const [isReloading, setIsReloading] = useState(false);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const inputRef = useRef<HTMLInputElement | null>(null);
     const listId = id ? `${id}-list` : undefined;
@@ -122,6 +127,21 @@ export const SearchableSelect = ({
         setOpen(false);
     };
 
+    const handleReload = useCallback(async () => {
+        if (!onReload || isReloading) {
+            return;
+        }
+
+        setIsReloading(true);
+        try {
+            await onReload();
+        } catch (error) {
+            console.error("Failed to reload select options", error);
+        } finally {
+            setIsReloading(false);
+        }
+    }, [onReload, isReloading]);
+
     const searchId = id ? `${id}-search` : undefined;
 
     return (
@@ -160,17 +180,40 @@ export const SearchableSelect = ({
                 >
                     <div
                         className="border-b border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-800 dark:bg-neutral-900/80">
-                        <Input
-                            id={searchId}
-                            ref={inputRef}
-                            placeholder={searchPlaceholder}
-                            value={query}
-                            onChange={(event) => setQuery(event.target.value)}
-                            className="h-8 w-full bg-white text-sm dark:bg-neutral-900"
-                        />
+                        <div className="flex items-center gap-2">
+                            <Input
+                                id={searchId}
+                                ref={inputRef}
+                                placeholder={searchPlaceholder}
+                                value={query}
+                                onChange={(event) => setQuery(event.target.value)}
+                                className="h-8 w-full flex-1 bg-white text-sm dark:bg-neutral-900"
+                            />
+                            {onReload && (
+                                <button
+                                    type="button"
+                                    onClick={() => void handleReload()}
+                                    disabled={isReloading}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-600 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                                    title={isReloading ? "Refreshing…" : "Reload options"}
+                                >
+                                    {isReloading ? (
+                                        <Loader2 className="h-4 w-4 animate-spin"/>
+                                    ) : (
+                                        <RotateCw className="h-4 w-4"/>
+                                    )}
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div className="max-h-60 overflow-y-auto p-1">
-                        {filtered.length === 0 ? (
+                        {isReloading ? (
+                            <div
+                                className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                <Loader2 className="h-4 w-4 animate-spin"/>
+                                <span>{loadingMessage}</span>
+                            </div>
+                        ) : filtered.length === 0 ? (
                             <p className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
                                 {emptyMessage}
                             </p>

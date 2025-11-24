@@ -5,7 +5,8 @@ import {convertToModelMessages, generateObject, stepCountIs, streamText, tool, U
 import {z} from "zod";
 import {db} from "@/lib/db";
 import {sessions} from "@/lib/db/schema/sessions";
-import {eq} from "drizzle-orm";
+import {sessionAiDrafts} from "@/lib/db/schema/session-ai-drafts";
+import {and, eq} from "drizzle-orm";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
@@ -169,6 +170,92 @@ const mergeContextBlocks = (
     return Array.from(merged.values());
 };
 
+const sanitizeAiFilePath = (path: string) => {
+    if (!path || typeof path !== "string") {
+        throw new Error("invalid_ai_path");
+    }
+    const normalized = path.trim().replace(/^\/+/, "");
+    if (!normalized.toLowerCase().startsWith("ai/")) {
+        throw new Error("ai_path_out_of_scope");
+    }
+    if (!normalized.toLowerCase().endsWith(".mdc")) {
+        throw new Error("ai_path_extension_required");
+    }
+    if (normalized.includes("..")) {
+        throw new Error("ai_path_out_of_scope");
+    }
+    return normalized;
+};
+
+const upsertAiDraft = async ({
+                                 sessionId,
+                                 path,
+                                 content,
+                                 summary,
+                                 currentDraftCount,
+                             }: {
+    sessionId: string;
+    path: string;
+    content: string;
+    summary?: string | null;
+    currentDraftCount: number;
+}) => {
+    const normalizedPath = sanitizeAiFilePath(path);
+    const now = new Date();
+
+    const [existing] = await db
+        .select()
+        .from(sessionAiDrafts)
+        .where(
+            and(
+                eq(sessionAiDrafts.sessionId, sessionId),
+                eq(sessionAiDrafts.path, normalizedPath),
+            ),
+        )
+        .limit(1);
+
+    let nextDraftCount = currentDraftCount;
+
+    if (existing) {
+        await db
+            .update(sessionAiDrafts)
+            .set({
+                content,
+                summary: summary ?? null,
+                needsPersist: true,
+                updatedAt: now,
+            })
+            .where(
+                and(
+                    eq(sessionAiDrafts.sessionId, sessionId),
+                    eq(sessionAiDrafts.path, normalizedPath),
+                ),
+            );
+    } else {
+        await db.insert(sessionAiDrafts).values({
+            sessionId,
+            path: normalizedPath,
+            content,
+            summary: summary ?? null,
+            needsPersist: true,
+            createdAt: now,
+            updatedAt: now,
+        });
+        nextDraftCount = currentDraftCount + 1;
+    }
+
+    await db
+        .update(sessions)
+        .set({
+            persistHasChanges: true,
+            persistDraftCount: nextDraftCount,
+            updatedAt: now,
+        })
+        .where(eq(sessions.id, sessionId));
+
+    return {path: normalizedPath, nextDraftCount};
+};
+
 export async function POST(req: Request) {
     const {messages, sessionId}: { messages: UIMessage[]; sessionId?: string } =
         await req.json();
@@ -197,13 +284,18 @@ export async function POST(req: Request) {
         .update(sessions)
         .set({updatedAt: new Date()})
         .where(eq(sessions.id, sessionId));
+    let sessionRecord = session;
 
-    const sessionContextBlocks = buildSessionContextBlocks(session);
+    const sessionContextBlocks = buildSessionContextBlocks(sessionRecord);
     const bitbucketContextBlocks = extractBitbucketContextBlocks(messages);
     const combinedContextBlocks = mergeContextBlocks(
         sessionContextBlocks,
         bitbucketContextBlocks,
     );
+
+    const persistenceGuidance = sessionRecord.persistAllowWrites
+        ? "When the user asks you to write to the persistency layer (ai/ folder), call the writeAiFile tool with the full .mdc content for the appropriate ai/ path. Only write files within the ai/ directory."
+        : "This session is read-only. Do not attempt to write to the persistency layer (ai/ folder) or call the writeAiFile tool.";
 
   const result = streamText({
     model: "openai/gpt-4o",
@@ -221,6 +313,7 @@ export async function POST(req: Request) {
     Keep responses short and concise. Answer in a single sentence where possible.
     If you are unsure, use the getInformation tool and you can use common sense to reason based on the information you do have.
     Use your abilities as a reasoning machine to answer questions based on the information you do have.
+    ${persistenceGuidance}
 `,
     stopWhen: stepCountIs(5),
     tools: {
@@ -299,6 +392,57 @@ export async function POST(req: Request) {
           return object.questions;
         },
       }),
+        writeAiFile: tool({
+            description: `Queue changes to the Bitbucket persistency layer (ai/ folder). Only use this tool when the user explicitly asks you to update or create content inside the ai/ directory. Always provide the full file content.`,
+            inputSchema: z.object({
+                path: z
+                    .string()
+                    .describe("The persistency layer path for the .mdc file, e.g. ai/notes/summary.mdc"),
+                content: z
+                    .string()
+                    .describe("The complete file contents that should be written."),
+                summary: z
+                    .string()
+                    .optional()
+                    .describe("Optional short description of the change."),
+            }),
+            execute: async ({path, content, summary}) => {
+                if (!sessionRecord.persistAllowWrites) {
+                    return "Persistence is disabled for this session. Ask the user to enable persistency layer writes before queuing changes.";
+                }
+
+                if (!content || content.trim().length === 0) {
+                    return "Cannot queue an empty file.";
+                }
+
+                try {
+                    const {path: normalizedPath, nextDraftCount} = await upsertAiDraft({
+                        sessionId,
+                        path,
+                        content,
+                        summary: summary ?? null,
+                        currentDraftCount: Number(sessionRecord.persistDraftCount ?? 0),
+                    });
+                    sessionRecord = {
+                        ...sessionRecord,
+                        persistHasChanges: true,
+                        persistDraftCount: nextDraftCount,
+                        updatedAt: new Date(),
+                    };
+                    return `Queued persistency layer update for ${normalizedPath}.`;
+                } catch (error) {
+                    if (error instanceof Error) {
+                        if (error.message === "ai_path_out_of_scope") {
+                            return "Refused to write outside the persistency layer scope.";
+                        }
+                        if (error.message === "ai_path_extension_required") {
+                            return "Persistency layer files must use the .mdc extension.";
+                        }
+                    }
+                    return "Unable to queue the persistency layer update.";
+                }
+            },
+        }),
     },
   });
 

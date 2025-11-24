@@ -2,6 +2,8 @@
 
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
+import {Checkbox} from "@/components/ui/checkbox";
+import {Button} from "@/components/ui/button";
 import {SearchableSelect} from "@/components/ui/searchable-select";
 import {UIMessage, useChat} from "@ai-sdk/react";
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
@@ -47,6 +49,27 @@ type SessionContextMetadata = {
     hasBootstrap: boolean;
 };
 
+type SessionPersistSummary = {
+    allowWrites: boolean;
+    hasPendingChanges: boolean;
+    draftCount: number;
+    pr: {
+        id: string;
+        url: string | null;
+        branch: string | null;
+        title: string | null;
+        updatedAt: string | null;
+    } | null;
+};
+
+type SessionPersistDraft = {
+    path: string;
+    content: string;
+    summary: string | null;
+    needsPersist: boolean;
+    updatedAt: string;
+};
+
 type SessionSummary = {
     id: string;
     label: string;
@@ -76,6 +99,7 @@ type SessionSummary = {
         hasBootstrap: boolean;
         fileCount: number;
     };
+    persist: SessionPersistSummary;
 };
 
 type SessionDetails = Omit<SessionSummary, "context"> & {
@@ -86,6 +110,9 @@ type SessionDetails = Omit<SessionSummary, "context"> & {
         files: SessionContextFile[];
     };
     branchAvailable: boolean | null;
+    persist: SessionPersistSummary & {
+        drafts: SessionPersistDraft[];
+    };
 };
 
 export default function Chat() {
@@ -113,6 +140,12 @@ export default function Chat() {
         useState<SessionContextMetadata | null>(null);
 
     const [input, setInput] = useState("");
+    const [pendingPersistEnabled, setPendingPersistEnabled] =
+        useState<boolean>(false);
+    const [isPersistTogglePending, setIsPersistTogglePending] =
+        useState<boolean>(false);
+    const [isPersistActionPending, setIsPersistActionPending] =
+        useState<boolean>(false);
 
     const sessionUpdatedFormatter = useMemo(
         () =>
@@ -129,7 +162,6 @@ export default function Chat() {
     const sessionCreationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
         null,
     );
-
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
     const {messages, status, sendMessage, setMessages} = useChat({
@@ -142,6 +174,8 @@ export default function Chat() {
             toast.error("You've been rate limited, please try again later!");
         },
     });
+
+    const previousChatStatusRef = useRef(status);
 
     const fetchSessions = useCallback(async () => {
         try {
@@ -169,14 +203,14 @@ export default function Chat() {
       }
   }, [messages]);
 
-  useEffect(() => {
-      return () => {
-          if (sessionCreationTimerRef.current) {
-              clearTimeout(sessionCreationTimerRef.current);
-              sessionCreationTimerRef.current = null;
-          }
-      };
-  }, []);
+    useEffect(() => {
+        return () => {
+            if (sessionCreationTimerRef.current) {
+                clearTimeout(sessionCreationTimerRef.current);
+                sessionCreationTimerRef.current = null;
+            }
+        };
+    }, []);
 
     const generateMessageId = useCallback(() => {
         if (
@@ -207,6 +241,12 @@ export default function Chat() {
                 truncated: session.context.truncated,
                 hasBootstrap: session.context.hasBootstrap,
                 fileCount: session.context.files.length,
+            },
+            persist: {
+                allowWrites: session.persist.allowWrites,
+                hasPendingChanges: session.persist.hasPendingChanges,
+                draftCount: session.persist.draftCount,
+                pr: session.persist.pr,
             },
         }),
         [],
@@ -272,7 +312,7 @@ export default function Chat() {
                 sections.push(
                     `${headerLines.join(
                         "\n",
-                    )}\n\nThe ai/ folder was not found for this branch. This session will start without repository context.`,
+                    )}\n\nThe persistency layer was not found for this branch. This session will start without repository context.`,
                 );
             } else if (files.length === 0) {
                 state = "empty";
@@ -282,7 +322,7 @@ export default function Chat() {
                 sections.push(
                     `${headerLines.join(
                         "\n",
-                    )}\n\nThe ai/ folder does not contain any .mdc files.${bootstrapNote}\nThis session will start without repository context.`,
+                    )}\n\nThe persistency layer does not contain any .mdc files.${bootstrapNote}\nThis session will start without repository context.`,
                 );
             } else {
                 const notes: string[] = [];
@@ -293,7 +333,7 @@ export default function Chat() {
                 }
                 if (session.context.truncated) {
                     notes.push(
-                        "Additional files exist in ai/ but were omitted to respect the limit.",
+                        "Additional files exist in the persistency layer but were omitted to respect the limit.",
                     );
                 }
 
@@ -432,6 +472,17 @@ export default function Chat() {
         [applySessionContext, summarizeSession],
     );
 
+    useEffect(() => {
+        if (
+            previousChatStatusRef.current === "streaming" &&
+            status === "ready" &&
+            activeSession
+        ) {
+            void loadSessionDetails(activeSession.id);
+        }
+        previousChatStatusRef.current = status;
+    }, [status, activeSession, loadSessionDetails]);
+
     const createSession = useCallback(
         async (project: BitbucketProject, branch: BitbucketBranch) => {
             clearConversation();
@@ -460,12 +511,13 @@ export default function Chat() {
                             name: branch.name,
                             isDefault: branch.isDefault ?? false,
                         },
-                        repository: {
-                            slug: branch.repository.slug,
-                            name: branch.repository.name,
-                        },
-                    }),
-                });
+                    repository: {
+                        slug: branch.repository.slug,
+                        name: branch.repository.name,
+                    },
+                    allowPersist: pendingPersistEnabled,
+                }),
+            });
 
                 if (response.status === 401) {
                     setSessionContextState("auth-required");
@@ -500,7 +552,12 @@ export default function Chat() {
                 sessionCreationTimerRef.current = null;
             }
         },
-        [applySessionContext, summarizeSession, clearConversation],
+        [
+            applySessionContext,
+            summarizeSession,
+            clearConversation,
+            pendingPersistEnabled,
+        ],
     );
 
     useEffect(() => {
@@ -669,6 +726,46 @@ export default function Chat() {
 
     const isInputDisabled = !canSend;
 
+    const isNewSessionSelection = selectedSessionId === NEW_SESSION_OPTION;
+    const persistCheckboxChecked = isNewSessionSelection
+        ? pendingPersistEnabled
+        : activeSession?.persist.allowWrites ?? false;
+    const persistCheckboxDisabled = isNewSessionSelection
+        ? !selectedProject || !selectedBranch
+        : !activeSession || isPersistTogglePending;
+
+    const persistButtonState: "create" | "review" | "update" =
+        activeSession?.persist.allowWrites
+            ? activeSession.persist.pr
+                ? activeSession.persist.hasPendingChanges
+                    ? "update"
+                    : "review"
+                : "create"
+            : "create";
+
+    const persistActionDisabled =
+        !activeSession ||
+        !activeSession.persist.allowWrites ||
+        isPersistActionPending ||
+        (persistButtonState === "review"
+            ? !activeSession.persist.pr?.url
+            : !activeSession.persist.hasPendingChanges ||
+              activeSession.persist.draftCount === 0);
+
+    const persistHelperText = activeSession
+        ? activeSession.persist.allowWrites
+            ? activeSession.persist.pr
+                ? activeSession.persist.hasPendingChanges
+                    ? "New persistency layer changes are ready to update the pull request."
+                    : "The pull request is up to date with the latest persistency layer changes."
+                : activeSession.persist.draftCount > 0
+                    ? `${activeSession.persist.draftCount} persistency layer draft${
+                        activeSession.persist.draftCount === 1 ? "" : "s"
+                    } ready to create a PR.`
+                    : "Generate persistency layer content with the assistant to create a pull request."
+            : "Enable persistence to allow the assistant to prepare persistency layer updates."
+        : null;
+
     const handleSessionSelect = (value: SessionSelectValue) => {
         if (value === NEW_SESSION_OPTION) {
             setSelectedSessionId(NEW_SESSION_OPTION);
@@ -686,6 +783,106 @@ export default function Chat() {
 
         setSelectedSessionId(value);
     };
+
+    const handlePersistCheckboxChange = useCallback(
+        async (checked: boolean) => {
+            if (selectedSessionId === NEW_SESSION_OPTION) {
+                setPendingPersistEnabled(checked);
+                return;
+            }
+
+            if (!activeSession || isPersistTogglePending) {
+                return;
+            }
+
+            setIsPersistTogglePending(true);
+            try {
+                const response = await fetch(`/api/sessions/${activeSession.id}`, {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({allowPersist: checked}),
+                });
+
+                if (!response.ok) {
+                    throw new Error("failed_to_update_persist");
+                }
+
+                await loadSessionDetails(activeSession.id);
+            } catch (error) {
+                console.error("Failed to update persistence preference", error);
+                toast.error(
+                    "Unable to update the persistency layer setting. Please try again.",
+                );
+            } finally {
+                setIsPersistTogglePending(false);
+            }
+        },
+        [
+            selectedSessionId,
+            activeSession,
+            isPersistTogglePending,
+            loadSessionDetails,
+        ],
+    );
+
+    const handlePersistAction = useCallback(async () => {
+        if (
+            selectedSessionId === NEW_SESSION_OPTION ||
+            !activeSession ||
+            !activeSession.persist.allowWrites
+        ) {
+            return;
+        }
+
+        const hasPending = activeSession.persist.hasPendingChanges;
+        const existingPr = activeSession.persist.pr;
+
+        if (!hasPending && existingPr?.url) {
+            window.open(existingPr.url, "_blank", "noreferrer");
+            return;
+        }
+
+        if (!hasPending) {
+            toast.error("No persistency layer changes are pending for this session.");
+            return;
+        }
+
+        setIsPersistActionPending(true);
+        try {
+            const response = await fetch(
+                `/api/sessions/${activeSession.id}/persist`,
+                {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({}),
+                },
+            );
+
+            if (!response.ok) {
+                const error = (await response.json().catch(() => null)) as {
+                    error?: string;
+                } | null;
+                throw new Error(error?.error ?? "persist_failed");
+            }
+
+            await loadSessionDetails(activeSession.id);
+
+            if (existingPr) {
+                toast.success("Updated the pull request with the latest persistency layer changes.");
+            } else {
+                toast.success("Created a pull request for the persistency layer changes.");
+            }
+        } catch (error) {
+            console.error("Failed to sync persistency layer changes", error);
+            toast.error(
+                "Unable to sync persistency layer changes with Bitbucket. Please try again.",
+            );
+        } finally {
+            setIsPersistActionPending(false);
+        }
+    }, [activeSession, selectedSessionId, loadSessionDetails]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -734,25 +931,26 @@ export default function Chat() {
                   >
                       Session
                   </Label>
-                  <SearchableSelect
-                      id="session-picker"
-                      value={selectedSessionId}
-                      onChange={(nextValue) =>
-                          handleSessionSelect(nextValue as SessionSelectValue)
-                      }
-                      options={sessionOptions}
-                      placeholder="Choose a session"
-                      searchPlaceholder="Search sessions..."
-                      emptyMessage="No sessions found."
-                  />
+              <SearchableSelect
+                id="session-picker"
+                value={selectedSessionId}
+                onChange={(nextValue) =>
+                  handleSessionSelect(nextValue as SessionSelectValue)
+                }
+                options={sessionOptions}
+                placeholder="Choose a session"
+                searchPlaceholder="Search sessions..."
+                emptyMessage="No sessions found."
+                onReload={() => fetchSessions()}
+              />
               </div>
 
               {selectedSessionId === NEW_SESSION_OPTION ? (
                   <>
                       <BitbucketProjectPicker
-                  value={selectedProject?.uuid ?? null}
-                  onChange={setSelectedProject}
-                  onStatusChange={setBitbucketStatus}
+                          value={selectedProject?.uuid ?? null}
+                          onChange={setSelectedProject}
+                          onStatusChange={setBitbucketStatus}
                       />
                       <BitbucketBranchPicker
                           project={selectedProject}
@@ -807,6 +1005,51 @@ export default function Chat() {
                   </>
               )}
 
+              <div className="rounded-md border border-neutral-200 bg-white/60 p-3 dark:border-neutral-700 dark:bg-neutral-900/60">
+                  <div className="flex items-center justify-between gap-4">
+                      <div className="flex flex-col">
+                          <span className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                              Persistency layer writes
+                          </span>
+                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                              Allow the assistant to prepare updates for the persistency layer.
+                          </span>
+                      </div>
+                      <Checkbox
+                          disabled={persistCheckboxDisabled}
+                          checked={persistCheckboxChecked}
+                          onChange={(event) =>
+                              handlePersistCheckboxChange(event.target.checked)
+                          }
+                      />
+                  </div>
+
+                  {activeSession && !isNewSessionSelection && (
+                      <div className="mt-3 flex flex-col gap-2">
+                          <Button
+                              size="sm"
+                              disabled={persistActionDisabled}
+                              onClick={handlePersistAction}
+                              variant="outline"
+                          >
+                              {persistButtonState === "review"
+                                  ? "Review PR"
+                                  : persistButtonState === "update"
+                                      ? "Update PR"
+                                      : "Create PR"}
+                          </Button>
+                          {persistHelperText && (
+                              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                                  {persistButtonState === "review" &&
+                                  activeSession.persist.pr?.url
+                                      ? "Open the existing pull request to review the persistency layer changes."
+                                      : persistHelperText}
+                              </p>
+                          )}
+                      </div>
+                  )}
+              </div>
+
               {sessionContextState === "loading" && (
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
                       Preparing session context…
@@ -814,18 +1057,18 @@ export default function Chat() {
               )}
               {sessionContextState === "ready" && sessionContextMetadata && (
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Loaded ai/ folder ({sessionContextMetadata.fileCount}
+                      Loaded persistency layer ({sessionContextMetadata.fileCount}
                       {sessionContextMetadata.truncated ? "+" : ""} files).
                   </p>
               )}
               {sessionContextState === "missing" && (
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      No ai/ folder found. You can still continue with this session.
+                      Persistency layer not found. You can still continue with this session.
                   </p>
               )}
               {sessionContextState === "empty" && (
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      The ai/ folder does not contain usable .mdc files. Session
+                      The persistency layer does not contain usable .mdc files. Session
                       context is blank.
                   </p>
               )}
