@@ -1,7 +1,6 @@
 import React from "react";
-import { motion } from "framer-motion";
-import Link from "next/link";
-import { InformationIcon, VercelIcon } from "./icons";
+import {motion} from "framer-motion";
+import {InformationIcon, VercelIcon} from "./icons";
 
 const ProjectOverview = () => {
   return (
@@ -17,36 +16,7 @@ const ProjectOverview = () => {
           <span>+</span>
           <InformationIcon />
         </p>
-        <p>
-          The{" "}
-          <Link
-            href="https://sdk.vercel.ai/docs/reference/ai-sdk-ui/use-chat"
-            className="text-blue-500"
-          >
-            useChat
-          </Link>{" "}
-          hook along with the{" "}
-          <Link
-            href="https://sdk.vercel.ai/docs/reference/ai-sdk-core/stream-text"
-            className="text-blue-500"
-          >
-            streamText
-          </Link>{" "}
-          function allows you to build applications with retrieval augmented
-          generation (RAG) capabilities. Data is stored as vector embeddings
-          using DrizzleORM and PostgreSQL.
-        </p>
-        <p>
-          Learn how to build this project by following this{" "}
-          <Link
-            className="text-blue-500"
-            href="https://sdk.vercel.ai/docs/guides/rag-chatbot"
-            target="_blank"
-          >
-            guide
-          </Link>
-          .
-        </p>
+          <p>Ciao</p>
       </div>
     </motion.div>
   );

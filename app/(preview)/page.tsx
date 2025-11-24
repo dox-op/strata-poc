@@ -1,16 +1,16 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
-import { UIMessage, useChat } from "@ai-sdk/react";
-import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import ReactMarkdown, { Options } from "react-markdown";
-import React from "react";
+import {Input} from "@/components/ui/input";
+import {UIMessage, useChat} from "@ai-sdk/react";
+import React, {useEffect, useMemo, useState} from "react";
+import {AnimatePresence, motion} from "framer-motion";
+import ReactMarkdown, {Options} from "react-markdown";
 import ProjectOverview from "@/components/project-overview";
-import { LoadingIcon } from "@/components/icons";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import { getToolName, isToolUIPart } from "ai";
+import {LoadingIcon} from "@/components/icons";
+import {cn} from "@/lib/utils";
+import {toast} from "sonner";
+import {getToolName, isToolUIPart} from "ai";
+import {type BitbucketProject, BitbucketProjectPicker,} from "@/components/bitbucket-project-picker";
 
 export default function Chat() {
   const { messages, status, sendMessage } = useChat({
@@ -23,6 +23,9 @@ export default function Chat() {
   });
 
   const [input, setInput] = useState("");
+
+    const [selectedProject, setSelectedProject] =
+        useState<BitbucketProject | null>(null);
 
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
@@ -125,6 +128,10 @@ export default function Chat() {
           )}
         >
           <div className="flex flex-col w-full justify-between gap-2">
+              <BitbucketProjectPicker
+                  value={selectedProject?.uuid ?? null}
+                  onChange={setSelectedProject}
+              />
             <form onSubmit={handleSubmit} className="flex space-x-2">
               <Input
                 className={`bg-neutral-100 text-base w-full text-neutral-700 dark:bg-neutral-700 dark:placeholder:text-neutral-400 dark:text-neutral-300`}
