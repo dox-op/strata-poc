@@ -1,6 +1,7 @@
 "use client";
 
 import {Input} from "@/components/ui/input";
+import {Label} from "@/components/ui/label";
 import {UIMessage, useChat} from "@ai-sdk/react";
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {AnimatePresence, motion} from "framer-motion";
@@ -13,115 +14,156 @@ import {getToolName, isToolUIPart} from "ai";
 import {type BitbucketProject, BitbucketProjectPicker,} from "@/components/bitbucket-project-picker";
 import {type BitbucketBranch, BitbucketBranchPicker,} from "@/components/bitbucket-branch-picker";
 
-export default function Chat() {
-    const {messages, status, sendMessage, setMessages} = useChat({
-    onToolCall({ toolCall }) {
-      console.log("Tool call:", toolCall);
-    },
-    onError: () => {
-      toast.error("You've been rate limited, please try again later!");
-    },
-  });
+const NEW_SESSION_OPTION = "new" as const;
 
-  const [input, setInput] = useState("");
+type SessionSelectValue = typeof NEW_SESSION_OPTION | string;
+
+type BitbucketConnectionStatus =
+    | "loading"
+    | "linked"
+    | "disconnected"
+    | "error";
+
+type SessionContextState =
+    | "idle"
+    | "loading"
+    | "ready"
+    | "missing"
+    | "empty"
+    | "error"
+    | "auth-required";
+
+type SessionContextFile = {
+    path: string;
+    content: string;
+    truncated: boolean;
+};
+
+type SessionContextMetadata = {
+    fileCount: number;
+    truncated: boolean;
+    folderExists: boolean;
+    hasBootstrap: boolean;
+};
+
+type SessionSummary = {
+    id: string;
+    label: string;
+    createdAt: string;
+    updatedAt: string;
+    project: {
+        uuid: string;
+        key: string;
+        name: string;
+    };
+    workspace: {
+        slug: string | null;
+        name: string | null;
+        uuid: string | null;
+    };
+    repository: {
+        slug: string;
+        name: string;
+    };
+    branch: {
+        name: string;
+        isDefault: boolean;
+    };
+    context: {
+        folderExists: boolean;
+        truncated: boolean;
+        hasBootstrap: boolean;
+        fileCount: number;
+    };
+};
+
+type SessionDetails = Omit<SessionSummary, "context"> & {
+    context: {
+        folderExists: boolean;
+        truncated: boolean;
+        hasBootstrap: boolean;
+        files: SessionContextFile[];
+    };
+    branchAvailable: boolean | null;
+};
+
+export default function Chat() {
+    const [sessions, setSessions] = useState<SessionSummary[]>([]);
+    const [selectedSessionId, setSelectedSessionId] =
+        useState<SessionSelectValue>(NEW_SESSION_OPTION);
+    const [activeSession, setActiveSession] = useState<SessionDetails | null>(
+        null,
+    );
 
     const [selectedProject, setSelectedProject] =
         useState<BitbucketProject | null>(null);
     const [selectedBranch, setSelectedBranch] =
         useState<BitbucketBranch | null>(null);
-    const [branchContextState, setBranchContextState] = useState<
-        "idle" | "loading" | "ready" | "missing" | "error"
-    >("idle");
-    const [branchContextError, setBranchContextError] = useState<string | null>(
+
+    const [bitbucketStatus, setBitbucketStatus] =
+        useState<BitbucketConnectionStatus>("loading");
+
+    const [sessionContextState, setSessionContextState] =
+        useState<SessionContextState>("idle");
+    const [sessionContextError, setSessionContextError] = useState<string | null>(
         null,
     );
-    const [branchContextMetadata, setBranchContextMetadata] = useState<{
-        fileCount: number;
-        truncated: boolean;
-    } | null>(null);
-    const branchContextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    const [sessionContextMetadata, setSessionContextMetadata] =
+        useState<SessionContextMetadata | null>(null);
+
+    const [input, setInput] = useState("");
+
+    const sessionCreationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
         null,
     );
-    const branchContextAbortControllerRef = useRef<AbortController | null>(null);
-    const branchSelectionKeyRef = useRef<string | null>(null);
 
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
-    useEffect(() => {
-        return () => {
-            if (branchContextTimerRef.current) {
-                clearTimeout(branchContextTimerRef.current);
-                branchContextTimerRef.current = null;
-            }
-            branchContextAbortControllerRef.current?.abort();
-            branchContextAbortControllerRef.current = null;
-        };
-    }, []);
-
-  useEffect(() => {
-    if (messages.length > 0) setIsExpanded(true);
-  }, [messages]);
-
-  const currentToolCall = useMemo(() => {
-    const lastAssistant = [...messages]
-      .reverse()
-      .find((message) => message.role === "assistant");
-
-    if (!lastAssistant) {
-      return undefined;
-    }
-
-    const pendingPart = [...lastAssistant.parts].reverse().find((part) => {
-      if (part.type === "dynamic-tool") {
-        return (
-          part.state !== "output-available" && part.state !== "output-error"
-        );
-      }
-
-      if (!isToolUIPart(part)) {
-        return false;
-      }
-
-      const toolPart = part as { state?: string };
-      return (
-        toolPart.state !== "output-available" &&
-        toolPart.state !== "output-error"
-      );
+    const {messages, status, sendMessage, setMessages} = useChat({
+        id: activeSession?.id,
+        body: activeSession ? {sessionId: activeSession.id} : undefined,
+        onToolCall({toolCall}) {
+            console.log("Tool call:", toolCall);
+        },
+        onError: () => {
+            toast.error("You've been rate limited, please try again later!");
+        },
     });
 
-    if (!pendingPart) {
-      return undefined;
-    }
-
-    if (pendingPart.type === "dynamic-tool") {
-      return pendingPart.toolName;
-    }
-
-    if (isToolUIPart(pendingPart)) {
-      return getToolName(pendingPart);
-    }
-
-    return undefined;
-  }, [messages]);
-
-  const isAwaitingResponse =
-    status === "submitted" || status === "streaming" || currentToolCall != null;
-
-  const [showLoading, setShowLoading] = useState(isAwaitingResponse);
-
-  useEffect(() => {
-    if (isAwaitingResponse) {
-      setShowLoading(true);
-      return;
-    }
-
-    const timeout = setTimeout(() => setShowLoading(false), 120);
-    return () => clearTimeout(timeout);
-  }, [isAwaitingResponse]);
+    const fetchSessions = useCallback(async () => {
+        try {
+            const response = await fetch("/api/sessions", {cache: "no-store"});
+            if (!response.ok) {
+                throw new Error("failed_to_fetch_sessions");
+            }
+            const data = (await response.json()) as { sessions?: SessionSummary[] };
+            const ordered = (data.sessions ?? []).slice().sort((a, b) =>
+                b.updatedAt.localeCompare(a.updatedAt),
+            );
+            setSessions(ordered);
+        } catch (error) {
+            console.error("Failed to load sessions", error);
+        }
+    }, []);
 
     useEffect(() => {
-        setInput("");
-    }, [selectedProject?.uuid, selectedBranch?.id]);
+        void fetchSessions();
+    }, [fetchSessions]);
+
+  useEffect(() => {
+      if (messages.length > 0) {
+          setIsExpanded(true);
+      }
+  }, [messages]);
+
+  useEffect(() => {
+      return () => {
+          if (sessionCreationTimerRef.current) {
+              clearTimeout(sessionCreationTimerRef.current);
+              sessionCreationTimerRef.current = null;
+          }
+      };
+  }, []);
 
     const generateMessageId = useCallback(() => {
         if (
@@ -133,313 +175,471 @@ export default function Chat() {
         return Math.random().toString(36).slice(2);
     }, []);
 
-    const resetChatSession = useCallback(() => {
+    const clearConversation = useCallback(() => {
         setMessages(() => []);
     }, [setMessages]);
 
-    const scheduleContextLoad = useCallback(() => {
-        if (!selectedProject || !selectedBranch) {
-            setBranchContextState("idle");
-            setBranchContextError(null);
-            setBranchContextMetadata(null);
-            resetChatSession();
-            return;
-        }
+    const summarizeSession = useCallback(
+        (session: SessionDetails): SessionSummary => ({
+            id: session.id,
+            label: session.label,
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt,
+            project: session.project,
+            workspace: session.workspace,
+            repository: session.repository,
+            branch: session.branch,
+            context: {
+                folderExists: session.context.folderExists,
+                truncated: session.context.truncated,
+                hasBootstrap: session.context.hasBootstrap,
+                fileCount: session.context.files.length,
+            },
+        }),
+        [],
+    );
 
-        const workspace =
-            selectedProject.workspace?.slug ?? selectedProject.workspace?.uuid ?? null;
+    const applySessionContext = useCallback(
+        (session: SessionDetails) => {
+            const headerLines = [
+                `Project: ${session.project.name}${
+                    session.project.key ? ` (${session.project.key})` : ""
+                }`,
+                session.workspace.name
+                    ? `Workspace: ${session.workspace.name}`
+                    : session.workspace.slug
+                        ? `Workspace: ${session.workspace.slug}`
+                        : null,
+                `Repository: ${session.repository.name} (${session.repository.slug})`,
+                `Branch: ${session.branch.name}`,
+            ].filter(Boolean);
 
-        if (!workspace) {
-            setBranchContextState("error");
-            setBranchContextError(
-                "Unable to determine workspace for the selected project.",
-            );
-            setBranchContextMetadata(null);
-            resetChatSession();
-            return;
-        }
+            const files = session.context.files;
+            let state: SessionContextState = "ready";
+            const sections: string[] = [];
 
-        const branchKey = `${selectedProject.uuid}:${selectedBranch.id}`;
-        branchSelectionKeyRef.current = branchKey;
-        setBranchContextState("loading");
-        setBranchContextError(null);
-        setBranchContextMetadata(null);
-        resetChatSession();
-
-        if (branchContextTimerRef.current) {
-            clearTimeout(branchContextTimerRef.current);
-            branchContextTimerRef.current = null;
-        }
-
-        branchContextAbortControllerRef.current?.abort();
-        branchContextAbortControllerRef.current = null;
-
-        branchContextTimerRef.current = setTimeout(() => {
-            branchContextTimerRef.current = null;
-            const controller = new AbortController();
-            branchContextAbortControllerRef.current = controller;
-
-            const params = new URLSearchParams({
-                workspace,
-                repository: selectedBranch.repository.slug,
-                branch: selectedBranch.name,
-            });
-
-            void (async () => {
-                try {
-                    const response = await fetch(
-                        `/api/bitbucket/ai-folder?${params.toString()}`,
-                        {
-                            credentials: "include",
-                            signal: controller.signal,
-                        },
+            if (!session.context.folderExists) {
+                state = "missing";
+                sections.push(
+                    `${headerLines.join(
+                        "\n",
+                    )}\n\nThe ai/ folder was not found for this branch. This session will start without repository context.`,
+                );
+            } else if (files.length === 0) {
+                state = "empty";
+                const bootstrapNote = session.context.hasBootstrap
+                    ? ""
+                    : "\nThe ai-bootstrap.mdc file was not found.";
+                sections.push(
+                    `${headerLines.join(
+                        "\n",
+                    )}\n\nThe ai/ folder does not contain any .mdc files.${bootstrapNote}\nThis session will start without repository context.`,
+                );
+            } else {
+                const notes: string[] = [];
+                if (!session.context.hasBootstrap) {
+                    notes.push(
+                        "Warning: ai-bootstrap.mdc was not found. Results may be limited.",
                     );
+                }
+                if (session.context.truncated) {
+                    notes.push(
+                        "Additional files exist in ai/ but were omitted to respect the limit.",
+                    );
+                }
 
-                    if (controller.signal.aborted) {
-                        return;
-                    }
+                const fileSections = files
+                    .map((file) => {
+                        const lines = [
+                            `### ${file.path}`,
+                            "```",
+                            file.content,
+                            "```",
+                        ];
+                        if (file.truncated) {
+                            lines.push("_Note: File content truncated to 100kB for preview._");
+                        }
+                        return lines.join("\n");
+                    })
+                    .join("\n\n");
 
-                    if (response.status === 401) {
-                        setBranchContextState("error");
-                        setBranchContextError("Bitbucket session expired. Please reconnect.");
-                        setBranchContextMetadata(null);
-                        resetChatSession();
-                        return;
-                    }
-
-                    if (!response.ok) {
-                        throw new Error("failed_to_fetch_ai_folder");
-                    }
-
-                    const data = (await response.json()) as {
-                        folderExists?: boolean;
-                        files?: Array<{
-                            path: string;
-                            content: string;
-                            truncated?: boolean;
-                        }>;
-                        truncated?: boolean;
-                    };
-
-                    if (
-                        branchSelectionKeyRef.current !== branchKey ||
-                        controller.signal.aborted
-                    ) {
-                        return;
-                    }
-
-                    const files = data.files ?? [];
-                    const projectSnapshot = selectedProject;
-                    const branchSnapshot = selectedBranch;
-
-                    const headerLines = [
-                        projectSnapshot
-                            ? `Project: ${projectSnapshot.name}${
-                                projectSnapshot.key ? ` (${projectSnapshot.key})` : ""
-                            }`
-                            : null,
-                        projectSnapshot?.workspace?.name
-                            ? `Workspace: ${projectSnapshot.workspace.name}`
-                            : projectSnapshot?.workspace?.slug
-                                ? `Workspace: ${projectSnapshot.workspace.slug}`
-                                : null,
-                        `Repository: ${branchSnapshot.repository.name} (${branchSnapshot.repository.slug})`,
-                        `Branch: ${branchSnapshot.name}`,
-                    ].filter(Boolean);
-
-                    const sharedContextMetadata = {
-                        workspace: {
-                            slug: selectedProject.workspace?.slug,
-                            name: selectedProject.workspace?.name,
-                            uuid: selectedProject.workspace?.uuid,
-                        },
-                        project: {
-                            uuid: selectedProject.uuid,
-                            key: selectedProject.key,
-                            name: selectedProject.name,
-                        },
-                        repository: {
-                            name: selectedBranch.repository.name,
-                            slug: selectedBranch.repository.slug,
-                        },
-                        branch: {
-                            name: selectedBranch.name,
-                            isDefault: selectedBranch.isDefault,
-                        },
-                    };
-
-                    if (!data.folderExists) {
-                        const messageText = `${headerLines.join("\n")}\n\nThe ai/ folder was not found in this branch.`;
-                        const message: UIMessage = {
-                            id: generateMessageId(),
-                            role: "user",
-                            parts: [
-                                {
-                                    type: "text",
-                                    text: messageText,
-                                },
-                            ],
-                            metadata: {
-                                source: "bitbucket-ai-folder",
-                                autoGenerated: true,
-                                contextStatus: "missing",
-                                context: {
-                                    ...sharedContextMetadata,
-                                    folderExists: false,
-                                    files: [],
-                                },
-                            },
-                        };
-                        setMessages(() => [message]);
-                        setBranchContextState("missing");
-                        setBranchContextError(null);
-                        setBranchContextMetadata(null);
-                        return;
-                    }
-
-                    if (files.length === 0) {
-                        const messageText = `${headerLines.join("\n")}\n\nThe ai/ folder is empty in this branch.`;
-                        const message: UIMessage = {
-                            id: generateMessageId(),
-                            role: "user",
-                            parts: [
-                                {
-                                    type: "text",
-                                    text: messageText,
-                                },
-                            ],
-                            metadata: {
-                                source: "bitbucket-ai-folder",
-                                autoGenerated: true,
-                                contextStatus: "empty",
-                                context: {
-                                    ...sharedContextMetadata,
-                                    folderExists: true,
-                                    files: [],
-                                },
-                            },
-                        };
-                        setMessages(() => [message]);
-                        setBranchContextState("ready");
-                        setBranchContextError(null);
-                        setBranchContextMetadata({fileCount: 0, truncated: false});
-                        return;
-                    }
-
-                    const notes: string[] = [];
-                    if (data.truncated) {
-                        notes.push(
-                            "Additional files exist in ai/ but were omitted to respect the limit.",
-                        );
-                    }
-
-                    const fileSections = files
-                        .map((file) => {
-                            const sectionLines = [
-                                `### ${file.path}`,
-                                "```",
-                                file.content,
-                                "```",
-                            ];
-                            if (file.truncated) {
-                                sectionLines.push(
-                                    "_Note: File content truncated to 100kB for preview._",
-                                );
-                            }
-                            return sectionLines.join("\n");
-                        })
-                        .join("\n\n");
-
-                    const messageLines = [
-                        ...headerLines,
+                sections.push(
+                    [
+                        headerLines.join("\n"),
                         `Loaded files: ${files.length}`,
                         notes.length > 0 ? notes.join(" ") : null,
                         "",
                         fileSections,
-                    ].filter((line) => line != null && line !== "");
+                    ]
+                        .filter((part) => part != null && part.length > 0)
+                        .join("\n\n"),
+                );
+            }
 
-                    const message: UIMessage = {
-                        id: generateMessageId(),
-                        role: "user",
-                        parts: [
-                            {
-                                type: "text",
-                                text: messageLines.join("\n\n"),
-                            },
-                        ],
-                        metadata: {
-                            source: "bitbucket-ai-folder",
-                            autoGenerated: true,
-                            contextStatus: "ready",
-                            context: {
-                                ...sharedContextMetadata,
-                                folderExists: true,
-                                files: files.map((file) => ({
-                                    path: file.path,
-                                    content: file.content,
-                                    truncated: Boolean(file.truncated),
-                                })),
-                                truncated: Boolean(data.truncated),
+            const contextStatus =
+                state === "ready" ? "ready" : state === "missing" ? "missing" : "empty";
+
+            const message: UIMessage = {
+                id: generateMessageId(),
+                role: "user",
+                parts: [
+                    {
+                        type: "text",
+                        text: sections.join("\n\n"),
+                    },
+                ],
+                metadata: {
+                    source: "bitbucket-ai-folder",
+                    autoGenerated: true,
+                    contextStatus,
+                    context: {
+                        project: session.project,
+                        workspace: session.workspace,
+                        repository: session.repository,
+                        branch: {
+                            name: session.branch.name,
+                            isDefault: session.branch.isDefault,
+                        },
+                        files,
+                        folderExists: session.context.folderExists,
+                        truncated: session.context.truncated,
+                        hasBootstrap: session.context.hasBootstrap,
+                    },
+                },
+            };
+
+            setMessages(() => [message]);
+
+            setSessionContextMetadata({
+                fileCount: files.length,
+                truncated: session.context.truncated,
+                folderExists: session.context.folderExists,
+                hasBootstrap: session.context.hasBootstrap,
+            });
+            setSessionContextError(null);
+            setSessionContextState(state);
+            setActiveSession(session);
+
+            setSelectedProject({
+                uuid: session.project.uuid,
+                key: session.project.key,
+                name: session.project.name,
+                workspace: {
+                    slug: session.workspace.slug ?? undefined,
+                    name: session.workspace.name ?? undefined,
+                    uuid: session.workspace.uuid ?? undefined,
+                },
+            });
+
+            setSelectedBranch({
+                id: `${session.repository.slug}:${session.branch.name}`,
+                name: session.branch.name,
+                repository: session.repository,
+                isDefault: session.branch.isDefault,
+            });
+
+            if (session.branchAvailable === false) {
+                setSessionContextState("error");
+                setSessionContextError(
+                    "The selected Bitbucket branch is no longer available. This session is read-only.",
+                );
+            }
+        },
+        [generateMessageId, setMessages],
+    );
+
+    const loadSessionDetails = useCallback(
+        async (sessionId: string) => {
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}`, {
+                    cache: "no-store",
+                });
+                if (response.status === 404) {
+                    setSessionContextState("error");
+                    setSessionContextError("Session not found.");
+                    setActiveSession(null);
+                    return;
+                }
+                if (!response.ok) {
+                    throw new Error("failed_to_load_session");
+                }
+                const data = (await response.json()) as { session: SessionDetails };
+                const detail = data.session;
+
+                setSessions((prev) => {
+                    const summary = summarizeSession(detail);
+                    const others = prev.filter((item) => item.id !== summary.id);
+                    return [summary, ...others];
+                });
+
+                applySessionContext(detail);
+            } catch (error) {
+                console.error("Failed to load session details", error);
+                setSessionContextState("error");
+                setSessionContextError("Unable to load the selected session.");
+                setActiveSession(null);
+            }
+        },
+        [applySessionContext, summarizeSession],
+    );
+
+    const createSession = useCallback(
+        async (project: BitbucketProject, branch: BitbucketBranch) => {
+            clearConversation();
+            setSessionContextState("loading");
+            setSessionContextError(null);
+            setSessionContextMetadata(null);
+
+            try {
+                const response = await fetch("/api/sessions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        project: {
+                            uuid: project.uuid,
+                            key: project.key,
+                            name: project.name,
+                            workspace: {
+                                slug: project.workspace?.slug,
+                                name: project.workspace?.name,
+                                uuid: project.workspace?.uuid,
                             },
                         },
-                    };
+                        branch: {
+                            name: branch.name,
+                            isDefault: branch.isDefault ?? false,
+                        },
+                        repository: {
+                            slug: branch.repository.slug,
+                            name: branch.repository.name,
+                        },
+                    }),
+                });
 
-                    setMessages(() => [message]);
-                    setBranchContextState("ready");
-                    setBranchContextError(null);
-                    setBranchContextMetadata({
-                        fileCount: files.length,
-                        truncated: Boolean(data.truncated),
-                    });
-                } catch (error) {
-                    if (
-                        controller.signal.aborted ||
-                        branchSelectionKeyRef.current !== branchKey
-                    ) {
-                        return;
-                    }
-
-                    console.error("Failed to hydrate ai/ context", error);
-                    setBranchContextState("error");
-                    setBranchContextError("Unable to load repository context.");
-                    setBranchContextMetadata(null);
-                    resetChatSession();
-                } finally {
-                    if (
-                        branchSelectionKeyRef.current === branchKey &&
-                        !controller.signal.aborted
-                    ) {
-                        branchContextAbortControllerRef.current = null;
-                    }
+                if (response.status === 401) {
+                    setSessionContextState("auth-required");
+                    setSessionContextError("Log in to Bitbucket to create a session.");
+                    setActiveSession(null);
+                    return;
                 }
-            })();
-        }, 2000);
+
+                if (!response.ok) {
+                    throw new Error("failed_to_create_session");
+                }
+
+                const data = (await response.json()) as { session: SessionDetails };
+                const detail = data.session;
+
+                setSessions((prev) => {
+                    const summary = summarizeSession(detail);
+                    const others = prev.filter((item) => item.id !== summary.id);
+                    return [summary, ...others];
+                });
+
+                applySessionContext(detail);
+                setSelectedSessionId(detail.id);
+            } catch (error) {
+                console.error("Failed to create session", error);
+                setSessionContextState("error");
+                setSessionContextError(
+                    "Unable to create the session. Please try again.",
+                );
+                setActiveSession(null);
+            } finally {
+                sessionCreationTimerRef.current = null;
+            }
+        },
+        [applySessionContext, summarizeSession, clearConversation],
+    );
+
+    useEffect(() => {
+        if (selectedSessionId === NEW_SESSION_OPTION) {
+            setActiveSession(null);
+
+            if (bitbucketStatus === "linked") {
+                if (!selectedProject || !selectedBranch) {
+                    setSessionContextState("idle");
+                }
+                setSessionContextError(null);
+            } else if (
+                bitbucketStatus === "disconnected" ||
+                bitbucketStatus === "error"
+            ) {
+                setSessionContextState("auth-required");
+                setSessionContextError("Log in to Bitbucket to create a session.");
+            }
+
+            setSessionContextMetadata(null);
+            return;
+        }
+
+        if (activeSession && activeSession.id === selectedSessionId) {
+            return;
+        }
+
+        setSessionContextState("loading");
+        setSessionContextError(null);
+        setSessionContextMetadata(null);
+        clearConversation();
+
+        void loadSessionDetails(selectedSessionId);
     }, [
-        generateMessageId,
-        resetChatSession,
-        selectedBranch,
+        selectedSessionId,
+        bitbucketStatus,
+        activeSession,
         selectedProject,
-        setMessages,
+        selectedBranch,
+        clearConversation,
+        loadSessionDetails,
     ]);
 
     useEffect(() => {
-        if (branchContextTimerRef.current) {
-            clearTimeout(branchContextTimerRef.current);
-            branchContextTimerRef.current = null;
+        if (selectedSessionId !== NEW_SESSION_OPTION) {
+            if (sessionCreationTimerRef.current) {
+                clearTimeout(sessionCreationTimerRef.current);
+                sessionCreationTimerRef.current = null;
+            }
+            return;
         }
-        branchContextAbortControllerRef.current?.abort();
-        branchContextAbortControllerRef.current = null;
-        scheduleContextLoad();
-    }, [scheduleContextLoad]);
+
+        if (bitbucketStatus !== "linked") {
+            if (!sessionCreationTimerRef.current) {
+                setSessionContextState("auth-required");
+                setSessionContextError("Log in to Bitbucket to create a session.");
+                setSessionContextMetadata(null);
+            }
+            return;
+        }
+
+        if (!selectedProject || !selectedBranch) {
+            if (!sessionCreationTimerRef.current) {
+                setSessionContextState("idle");
+                setSessionContextError(null);
+                setSessionContextMetadata(null);
+            }
+            return;
+        }
+
+        if (sessionCreationTimerRef.current) {
+            clearTimeout(sessionCreationTimerRef.current);
+        }
+
+        setSessionContextState("loading");
+        setSessionContextError(null);
+        setSessionContextMetadata(null);
+
+        sessionCreationTimerRef.current = setTimeout(() => {
+            sessionCreationTimerRef.current = null;
+            void createSession(selectedProject, selectedBranch);
+        }, 2000);
+
+        return () => {
+            if (sessionCreationTimerRef.current) {
+                clearTimeout(sessionCreationTimerRef.current);
+                sessionCreationTimerRef.current = null;
+            }
+        };
+    }, [
+        selectedSessionId,
+        selectedProject,
+        selectedBranch,
+        bitbucketStatus,
+        createSession,
+    ]);
+
+    useEffect(() => {
+        if (activeSession) {
+            setInput("");
+        }
+    }, [activeSession]);
+
+    const currentToolCall = useMemo(() => {
+        const lastAssistant = [...messages]
+            .reverse()
+            .find((message) => message.role === "assistant");
+
+        if (!lastAssistant) {
+            return undefined;
+        }
+
+        const pendingPart = [...lastAssistant.parts].reverse().find((part) => {
+            if (part.type === "dynamic-tool") {
+                return (
+                    part.state !== "output-available" && part.state !== "output-error"
+                );
+            }
+
+            if (!isToolUIPart(part)) {
+                return false;
+            }
+
+            const toolPart = part as { state?: string };
+            return (
+                toolPart.state !== "output-available" &&
+                toolPart.state !== "output-error"
+            );
+        });
+
+        if (!pendingPart) {
+            return undefined;
+        }
+
+        if (pendingPart.type === "dynamic-tool") {
+            return pendingPart.toolName;
+        }
+
+        if (isToolUIPart(pendingPart)) {
+            return getToolName(pendingPart);
+        }
+
+        return undefined;
+    }, [messages]);
+
+    const isAwaitingResponse =
+        status === "submitted" || status === "streaming" || currentToolCall != null;
+
+    const [showLoading, setShowLoading] = useState(isAwaitingResponse);
+
+    useEffect(() => {
+        if (isAwaitingResponse) {
+            setShowLoading(true);
+            return;
+        }
+
+        const timeout = setTimeout(() => setShowLoading(false), 120);
+        return () => clearTimeout(timeout);
+    }, [isAwaitingResponse]);
 
     const canSend =
-        selectedProject != null &&
-        selectedBranch != null &&
-        branchContextState !== "loading";
+        activeSession != null &&
+        sessionContextState !== "loading" &&
+        sessionContextState !== "error" &&
+        sessionContextState !== "auth-required";
+
     const isInputDisabled = !canSend;
 
+    const handleSessionSelect = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        const value = event.target.value as SessionSelectValue;
+        if (value === NEW_SESSION_OPTION) {
+            setSelectedSessionId(NEW_SESSION_OPTION);
+            setSelectedProject(null);
+            setSelectedBranch(null);
+            setActiveSession(null);
+            clearConversation();
+            setSessionContextMetadata(null);
+            setSessionContextError(null);
+            setSessionContextState(
+                bitbucketStatus === "linked" ? "idle" : "auth-required",
+            );
+            return;
+        }
+
+        setSelectedSessionId(value);
+    };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    console.log("Submitting form");
     e.preventDefault();
       if (!canSend) {
           return;
@@ -479,48 +679,126 @@ export default function Chat() {
           )}
         >
           <div className="flex flex-col w-full justify-between gap-2">
-              <BitbucketProjectPicker
-                  value={selectedProject?.uuid ?? null}
-                  onChange={(project) => {
-                      setSelectedProject(project);
-                      setSelectedBranch(null);
-                  }}
-              />
-              {selectedProject ? (
+              <div className="flex flex-col gap-1">
+                  <Label
+                      htmlFor="session-picker"
+                      className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+                  >
+                      Session
+                  </Label>
+                  <select
+                      id="session-picker"
+                      className="w-full rounded-md border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-800 outline-none transition focus:border-neutral-400 focus:ring-0 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+                      value={selectedSessionId}
+                      onChange={handleSessionSelect}
+                  >
+                      <option value={NEW_SESSION_OPTION}>Create new session</option>
+                      {sessions.map((session) => (
+                          <option key={session.id} value={session.id}>
+                              {session.label}
+                          </option>
+                      ))}
+                  </select>
+              </div>
+
+              {selectedSessionId === NEW_SESSION_OPTION ? (
                   <>
+                      <BitbucketProjectPicker
+                  value={selectedProject?.uuid ?? null}
+                  onChange={setSelectedProject}
+                  onStatusChange={setBitbucketStatus}
+                      />
                       <BitbucketBranchPicker
                           project={selectedProject}
                           value={selectedBranch?.id ?? null}
                           onChange={setSelectedBranch}
                       />
-                      {branchContextState === "loading" ? (
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              Preparing repository context…
-                          </p>
-                      ) : null}
-                      {branchContextState === "ready" && branchContextMetadata ? (
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              Loaded ai/ folder ({branchContextMetadata.fileCount}
-                              {branchContextMetadata.truncated ? "+" : ""} files).
-                          </p>
-                      ) : null}
-                      {branchContextState === "missing" ? (
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              No ai/ folder found for this branch. You can still continue.
-                          </p>
-                      ) : null}
-                      {branchContextState === "error" && branchContextError ? (
-                          <p className="text-xs text-red-500">{branchContextError}</p>
-                      ) : null}
                   </>
-              ) : null}
+              ) : (
+                  <>
+                      <div className="flex flex-col gap-1">
+                          <Label
+                              htmlFor="session-project"
+                              className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+                          >
+                              Project
+                          </Label>
+                          <select
+                              id="session-project"
+                              disabled
+                              className="w-full rounded-md border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-800 outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+                          >
+                              <option>
+                                  {activeSession
+                                      ? `${activeSession.project.name}${
+                                          activeSession.project.key
+                                              ? ` (${activeSession.project.key})`
+                                              : ""
+                                      }`
+                                      : "Loading project..."}
+                              </option>
+                          </select>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                          <Label
+                              htmlFor="session-branch"
+                              className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+                          >
+                              Branch
+                          </Label>
+                          <select
+                              id="session-branch"
+                              disabled
+                              className="w-full rounded-md border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-800 outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+                          >
+                              <option>
+                                  {activeSession
+                                      ? `${activeSession.repository.name} · ${activeSession.branch.name}`
+                                      : "Loading branch..."}
+                              </option>
+                          </select>
+                      </div>
+                  </>
+              )}
+
+              {sessionContextState === "loading" && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Preparing session context…
+                  </p>
+              )}
+              {sessionContextState === "ready" && sessionContextMetadata && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Loaded ai/ folder ({sessionContextMetadata.fileCount}
+                      {sessionContextMetadata.truncated ? "+" : ""} files).
+                  </p>
+              )}
+              {sessionContextState === "missing" && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      No ai/ folder found. You can still continue with this session.
+                  </p>
+              )}
+              {sessionContextState === "empty" && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      The ai/ folder does not contain usable .mdc files. Session
+                      context is blank.
+                  </p>
+              )}
+              {sessionContextState === "auth-required" && (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Log in to Bitbucket to create a new session.
+                  </p>
+              )}
+              {sessionContextState === "error" && sessionContextError && (
+                  <p className="text-xs text-red-500">{sessionContextError}</p>
+              )}
+
             <form onSubmit={handleSubmit} className="flex space-x-2">
               <Input
-                className={`bg-neutral-100 text-base w-full text-neutral-700 dark:bg-neutral-700 dark:placeholder:text-neutral-400 dark:text-neutral-300`}
+                  className="bg-neutral-100 text-base w-full text-neutral-700 dark:bg-neutral-700 dark:placeholder:text-neutral-400 dark:text-neutral-300"
                 minLength={3}
                 required
                 value={input}
-                placeholder={"Ask me anything..."}
+                  placeholder="Ask me anything..."
                 onChange={(e) => setInput(e.target.value)}
                 disabled={isInputDisabled}
               />

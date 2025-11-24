@@ -1,7 +1,11 @@
+import {NextResponse} from "next/server";
 import {createResource} from "@/lib/actions/resources";
 import {findRelevantContent, type RetrievalContextBlock,} from "@/lib/ai/embedding";
 import {convertToModelMessages, generateObject, stepCountIs, streamText, tool, UIMessage,} from "ai";
 import {z} from "zod";
+import {db} from "@/lib/db";
+import {sessions} from "@/lib/db/schema/sessions";
+import {eq} from "drizzle-orm";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
@@ -89,9 +93,117 @@ const extractBitbucketContextBlocks = (
     return blocks;
 };
 
+type SessionRow = typeof sessions.$inferSelect;
+type StoredSessionFile = {
+    path?: string;
+    content?: string;
+    truncated?: boolean;
+};
+
+const buildSessionContextBlocks = (
+    session: SessionRow | null,
+): RetrievalContextBlock[] => {
+    if (!session) {
+        return [];
+    }
+
+    const files = Array.isArray(session.contextFiles)
+        ? (session.contextFiles as StoredSessionFile[])
+        : [];
+
+    if (files.length === 0) {
+        return [];
+    }
+
+    const repositoryLabel = session.repositoryName ?? session.repositorySlug;
+    const branchLabel = session.branchName ? ` (${session.branchName})` : "";
+    const workspaceMetadata =
+        session.workspaceSlug || session.workspaceName || session.workspaceUuid
+            ? {
+                slug: session.workspaceSlug ?? undefined,
+                name: session.workspaceName ?? undefined,
+                uuid: session.workspaceUuid ?? undefined,
+            }
+            : undefined;
+
+    const blocks: RetrievalContextBlock[] = [];
+
+    for (const file of files) {
+        if (!file?.path || typeof file.content !== "string") {
+            continue;
+        }
+
+        blocks.push({
+            id: `${session.repositorySlug}:${session.branchName}:${file.path}`,
+            label: `${repositoryLabel}${branchLabel} · ${file.path}`,
+            content: file.content,
+            metadata: {
+                path: file.path,
+                truncated: Boolean(file.truncated),
+                repository: {
+                    slug: session.repositorySlug,
+                    name: session.repositoryName,
+                },
+                branch: {
+                    name: session.branchName,
+                    isDefault: session.branchIsDefault,
+                },
+                workspace: workspaceMetadata,
+            },
+        });
+    }
+
+    return blocks;
+};
+
+const mergeContextBlocks = (
+    primary: RetrievalContextBlock[],
+    secondary: RetrievalContextBlock[],
+): RetrievalContextBlock[] => {
+    const merged = new Map<string, RetrievalContextBlock>();
+    for (const block of [...primary, ...secondary]) {
+        if (!merged.has(block.id)) {
+            merged.set(block.id, block);
+        }
+    }
+    return Array.from(merged.values());
+};
+
 export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json();
+    const {messages, sessionId}: { messages: UIMessage[]; sessionId?: string } =
+        await req.json();
+
+    if (!sessionId) {
+        return NextResponse.json(
+            {error: "session_id_required"},
+            {status: 400},
+        );
+    }
+
+    const [session] = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.id, sessionId))
+        .limit(1);
+
+    if (!session) {
+        return NextResponse.json(
+            {error: "session_not_found"},
+            {status: 404},
+        );
+    }
+
+    await db
+        .update(sessions)
+        .set({updatedAt: new Date()})
+        .where(eq(sessions.id, sessionId));
+
+    const sessionContextBlocks = buildSessionContextBlocks(session);
     const bitbucketContextBlocks = extractBitbucketContextBlocks(messages);
+    const combinedContextBlocks = mergeContextBlocks(
+        sessionContextBlocks,
+        bitbucketContextBlocks,
+    );
 
   const result = streamText({
     model: "openai/gpt-4o",
@@ -148,7 +260,7 @@ export async function POST(req: Request) {
                   .map(
                       async (entry) =>
                           await findRelevantContent(entry, {
-                              contextBlocks: bitbucketContextBlocks,
+                              contextBlocks: combinedContextBlocks,
                               limit: 8,
                           }),
                   ),

@@ -20,4 +20,4 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "embeddingIndex" ON "embeddings" USING hnsw ("embedding" vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS "embedAdingIndex" ON "embeddings" USING hnsw ("embedding" vector_cosine_ops);

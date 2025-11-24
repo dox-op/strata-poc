@@ -20,6 +20,7 @@ type Status = "loading" | "linked" | "disconnected" | "error";
 interface BitbucketProjectPickerProps {
     value?: string | null;
     onChange?: (project: BitbucketProject | null) => void;
+    onStatusChange?: (status: Status) => void;
 }
 
 const ProjectsEmptyState = () => (
@@ -31,6 +32,7 @@ const ProjectsEmptyState = () => (
 export const BitbucketProjectPicker = ({
                                            value,
                                            onChange,
+                                           onStatusChange,
                                        }: BitbucketProjectPickerProps) => {
     const [status, setStatus] = useState<Status>("loading");
     const [projects, setProjects] = useState<BitbucketProject[]>([]);
@@ -88,6 +90,10 @@ export const BitbucketProjectPicker = ({
     useEffect(() => {
         void loadProjects();
     }, [loadProjects]);
+
+    useEffect(() => {
+        onStatusChange?.(status);
+    }, [status, onStatusChange]);
 
     useEffect(() => {
         if (value) {
