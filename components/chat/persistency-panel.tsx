@@ -35,7 +35,8 @@ export const PersistencyPanel = ({
             Persistency layer writes
           </span>
                     <span className="text-xs text-neutral-500 dark:text-neutral-400">
-            Allow the assistant to prepare updates for the persistency layer.
+            Allow the assistant to prepare ai/ .mdc updates that will be committed
+            back to your Bitbucket project/branch through a pull request.
           </span>
                 </div>
                 <Checkbox

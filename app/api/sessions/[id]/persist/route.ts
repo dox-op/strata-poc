@@ -2,7 +2,7 @@ import {NextRequest, NextResponse} from "next/server";
 import {db} from "@/lib/db";
 import {sessions} from "@/lib/db/schema/sessions";
 import {sessionAiDrafts} from "@/lib/db/schema/session-ai-drafts";
-import {and, eq, inArray, sql} from "drizzle-orm";
+import {and, desc, eq, inArray, sql} from "drizzle-orm";
 import {
     assertBitbucketConfig,
     BITBUCKET_SESSION_COOKIE,
@@ -12,6 +12,63 @@ import {
 import {ensureFreshSession, readBitbucketSession} from "@/app/api/sessions/utils";
 
 const encode = (value: string) => encodeURIComponent(value);
+
+export async function GET(
+    _request: NextRequest,
+    {params}: { params: { id?: string } },
+) {
+    const sessionId = params.id;
+    if (!sessionId) {
+        return NextResponse.json({error: "session_id_required"}, {status: 400});
+    }
+
+    const [session] = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.id, sessionId))
+        .limit(1);
+
+    if (!session) {
+        return NextResponse.json({error: "session_not_found"}, {status: 404});
+    }
+
+    const drafts = await db
+        .select()
+        .from(sessionAiDrafts)
+        .where(eq(sessionAiDrafts.sessionId, sessionId))
+        .orderBy(desc(sessionAiDrafts.updatedAt));
+
+    const draftCount =
+        typeof session.persistDraftCount === "number"
+            ? Number(session.persistDraftCount)
+            : drafts.length;
+
+    return NextResponse.json({
+        persist: {
+            allowWrites: session.persistAllowWrites,
+            hasPendingChanges: session.persistHasChanges,
+            draftCount,
+            drafts: drafts.map((draft) => ({
+                path: draft.path,
+                content: draft.content,
+                summary: draft.summary,
+                needsPersist: draft.needsPersist,
+                updatedAt: draft.updatedAt.toISOString(),
+            })),
+            pr: session.persistPrId
+                ? {
+                    id: session.persistPrId,
+                    url: session.persistPrUrl ?? null,
+                    branch: session.persistPrBranch ?? null,
+                    title: session.persistPrTitle ?? null,
+                    updatedAt: session.persistUpdatedAt
+                        ? session.persistUpdatedAt.toISOString()
+                        : null,
+                }
+                : null,
+        },
+    });
+}
 
 export async function POST(
     request: NextRequest,

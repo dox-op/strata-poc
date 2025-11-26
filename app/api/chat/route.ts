@@ -294,13 +294,13 @@ export async function POST(req: Request) {
     );
 
     const persistenceGuidance = sessionRecord.persistAllowWrites
-        ? "When the user asks you to write to the persistency layer (ai/ folder), call the writeAiFile tool with the full .mdc content for the appropriate ai/ path. Only write files within the ai/ directory."
+        ? "When the user asks you to write to the persistency layer (ai/ folder), call the writeAiFile tool with the full updated .mdc content for the appropriate ai/ path. These updates will be committed back to the selected Bitbucket project/branch and used to create or update the pull request, so only send text that should exist in the repository and never leave the ai/ directory."
         : "This session is read-only. Do not attempt to write to the persistency layer (ai/ folder) or call the writeAiFile tool.";
 
-  const result = streamText({
-    model: "openai/gpt-4o",
-    messages: convertToModelMessages(messages),
-    system: `You are a helpful assistant acting as the users' second brain.
+    const result = streamText({
+        model: "openai/gpt-4o",
+        messages: convertToModelMessages(messages),
+        system: `You are a helpful assistant acting as the users' second brain.
     Use tools on every request.
     Be sure to getInformation from your knowledge base before answering any questions.
     If the user presents infromation about themselves, use the addResource tool to store it.
@@ -315,136 +315,135 @@ export async function POST(req: Request) {
     Use your abilities as a reasoning machine to answer questions based on the information you do have.
     ${persistenceGuidance}
 `,
-    stopWhen: stepCountIs(5),
-    tools: {
-      addResource: tool({
-        description: `add a resource to your knowledge base.
+        stopWhen: stepCountIs(5),
+        tools: {
+            addResource: tool({
+                description: `add a resource to your knowledge base.
           If the user provides a random piece of knowledge unprompted, use this tool without asking for confirmation.`,
-        inputSchema: z.object({
-          content: z
-            .string()
-            .describe("the content or resource to add to the knowledge base"),
-        }),
-        execute: async ({ content }) => createResource({ content }),
-      }),
-      getInformation: tool({
-        description: `get information from your knowledge base to answer questions.`,
-        inputSchema: z.object({
-          question: z.string().describe("the users question"),
-          similarQuestions: z.array(z.string()).describe("keywords to search"),
-        }),
-          execute: async ({question, similarQuestions}) => {
-              const searchQueries = [
-                  question,
-                  ...similarQuestions.filter((item) => item.length > 0),
-              ];
-
-              const seenQueries = new Set<string>();
-          const results = await Promise.all(
-              searchQueries
-                  .filter((entry) => {
-                      const normalized = entry.trim().toLowerCase();
-                      if (normalized.length === 0 || seenQueries.has(normalized)) {
-                          return false;
-                      }
-                      seenQueries.add(normalized);
-                      return true;
-                  })
-                  .map(
-                      async (entry) =>
-                          await findRelevantContent(entry, {
-                              contextBlocks: combinedContextBlocks,
-                              limit: 8,
-                          }),
-                  ),
-          );
-          // Flatten the array of arrays and remove duplicates based on 'name'
-          const uniqueResults = Array.from(
-            new Map(results.flat().map((item) => [item?.name, item])).values(),
-          );
-          return uniqueResults;
-        },
-      }),
-      understandQuery: tool({
-        description: `understand the users query. use this tool on every prompt.`,
-        inputSchema: z.object({
-          query: z.string().describe("the users query"),
-          toolsToCallInOrder: z
-            .array(z.string())
-            .describe(
-              "these are the tools you need to call in the order necessary to respond to the users query",
-            ),
-        }),
-        execute: async ({ query }) => {
-          const { object } = await generateObject({
-            model: "openai/gpt-4o",
-            system:
-              "You are a query understanding assistant. Analyze the user query and generate similar questions.",
-            schema: z.object({
-              questions: z
-                .array(z.string())
-                .max(3)
-                .describe("similar questions to the user's query. be concise."),
+                inputSchema: z.object({
+                    content: z
+                        .string()
+                        .describe("the content or resource to add to the knowledge base"),
+                }),
+                execute: async ({content}) => createResource({content}),
             }),
-            prompt: `Analyze this query: "${query}". Provide the following:
+            getInformation: tool({
+                description: `get information from your knowledge base to answer questions.`,
+                inputSchema: z.object({
+                    question: z.string().describe("the users question"),
+                    similarQuestions: z.array(z.string()).describe("keywords to search"),
+                }),
+                execute: async ({question, similarQuestions}) => {
+                    const searchQueries = [
+                        question,
+                        ...similarQuestions.filter((item) => item.length > 0),
+                    ];
+
+                    const seenQueries = new Set<string>();
+                    const results = await Promise.all(
+                        searchQueries
+                            .filter((entry) => {
+                                const normalized = entry.trim().toLowerCase();
+                                if (normalized.length === 0 || seenQueries.has(normalized)) {
+                                    return false;
+                                }
+                                seenQueries.add(normalized);
+                                return true;
+                            })
+                            .map(
+                                async (entry) =>
+                                    await findRelevantContent(entry, {
+                                        contextBlocks: combinedContextBlocks,
+                                        limit: 8,
+                                    }),
+                            ),
+                    );
+                    // Flatten the array of arrays and remove duplicates based on 'name'
+                    const uniqueResults = Array.from(
+                        new Map(results.flat().map((item) => [item?.name, item])).values(),
+                    );
+                    return uniqueResults;
+                },
+            }),
+            understandQuery: tool({
+                description: `understand the users query. use this tool on every prompt.`,
+                inputSchema: z.object({
+                    query: z.string().describe("the users query"),
+                    toolsToCallInOrder: z
+                        .array(z.string())
+                        .describe(
+                            "these are the tools you need to call in the order necessary to respond to the users query",
+                        ),
+                }),
+                execute: async ({query}) => {
+                    const {object} = await generateObject({
+                        model: "openai/gpt-4o",
+                        system:
+                            "You are a query understanding assistant. Analyze the user query and generate similar questions.",
+                        schema: z.object({
+                            questions: z
+                                .array(z.string())
+                                .max(3)
+                                .describe("similar questions to the user's query. be concise."),
+                        }),
+                        prompt: `Analyze this query: "${query}". Provide the following:
                     3 similar questions that could help answer the user's query`,
-          });
-          return object.questions;
-        },
-      }),
-        writeAiFile: tool({
-            description: `Queue changes to the Bitbucket persistency layer (ai/ folder). Only use this tool when the user explicitly asks you to update or create content inside the ai/ directory. Always provide the full file content.`,
-            inputSchema: z.object({
-                path: z
-                    .string()
-                    .describe("The persistency layer path for the .mdc file, e.g. ai/notes/summary.mdc"),
-                content: z
-                    .string()
-                    .describe("The complete file contents that should be written."),
-                summary: z
-                    .string()
-                    .optional()
-                    .describe("Optional short description of the change."),
-            }),
-            execute: async ({path, content, summary}) => {
-                if (!sessionRecord.persistAllowWrites) {
-                    return "Persistence is disabled for this session. Ask the user to enable persistency layer writes before queuing changes.";
-                }
-
-                if (!content || content.trim().length === 0) {
-                    return "Cannot queue an empty file.";
-                }
-
-                try {
-                    const {path: normalizedPath, nextDraftCount} = await upsertAiDraft({
-                        sessionId,
-                        path,
-                        content,
-                        summary: summary ?? null,
-                        currentDraftCount: Number(sessionRecord.persistDraftCount ?? 0),
                     });
-                    sessionRecord = {
-                        ...sessionRecord,
-                        persistHasChanges: true,
-                        persistDraftCount: nextDraftCount,
-                        updatedAt: new Date(),
-                    };
-                    return `Queued persistency layer update for ${normalizedPath}.`;
-                } catch (error) {
-                    if (error instanceof Error) {
-                        if (error.message === "ai_path_out_of_scope") {
-                            return "Refused to write outside the persistency layer scope.";
-                        }
-                        if (error.message === "ai_path_extension_required") {
-                            return "Persistency layer files must use the .mdc extension.";
-                        }
+                    return object.questions;
+                },
+            }),
+            writeAiFile: tool({
+                description: `Queue changes to the Bitbucket persistency layer (ai/ folder). Only use this tool when the user explicitly asks you to update or create content inside the ai/ directory. Always provide the complete .mdc file contents exactly as they should appear in the repository so the system can commit them to the project/branch pull request.`,
+                inputSchema: z.object({
+                    path: z
+                        .string()
+                        .describe("The persistency layer path for the .mdc file, e.g. ai/notes/summary.mdc"),
+                    content: z
+                        .string()
+                        .describe("The complete file contents that should be written."),
+                    summary: z
+                        .string()
+                        .optional()
+                        .describe("Optional short description of the change."),
+                }),
+                execute: async ({path, content, summary}) => {
+                    if (!sessionRecord.persistAllowWrites) {
+                        return "Persistence is disabled for this session. Ask the user to enable persistency layer writes before queuing changes.";
                     }
-                    return "Unable to queue the persistency layer update.";
-                }
-            },
-        }),
-    },
-  });
 
-  return result.toUIMessageStreamResponse();
+                    if (!content || content.trim().length === 0) {
+                        return "Cannot queue an empty file.";
+                    }
+
+                    try {
+                        const {path: normalizedPath, nextDraftCount} = await upsertAiDraft({
+                            sessionId,
+                            path,
+                            content,
+                            summary: summary ?? null,
+                            currentDraftCount: Number(sessionRecord.persistDraftCount ?? 0),
+                        });
+                        sessionRecord = {
+                            ...sessionRecord,
+                            persistHasChanges: true,
+                            persistDraftCount: nextDraftCount,
+                            updatedAt: new Date(),
+                        };
+                        return `Queued persistency layer update for ${normalizedPath}.`;
+                    } catch (error) {
+                        if (error instanceof Error) {
+                            if (error.message === "ai_path_out_of_scope") {
+                                return "Refused to write outside the persistency layer scope.";
+                            }
+                            if (error.message === "ai_path_extension_required") {
+                                return "Persistency layer files must use the .mdc extension.";
+                            }
+                        }
+                        return "Unable to queue the persistency layer update.";
+                    }
+                },
+            }),
+        },
+    });
+    return result.toUIMessageStreamResponse();
 }

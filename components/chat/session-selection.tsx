@@ -9,6 +9,7 @@ import type {BitbucketConnectionStatus, SessionDetails, SessionSelectValue,} fro
 type SessionSelectionProps = {
     activeSession: SessionDetails | null
     isNewSessionSelection: boolean
+    sessionCreationPending: boolean
     onBitbucketStatusChange: (status: BitbucketConnectionStatus) => void
     onBranchChange: (branch: BitbucketBranch | null) => void
     onProjectChange: (project: BitbucketProject | null) => void
@@ -23,6 +24,7 @@ type SessionSelectionProps = {
 export const SessionSelection = ({
                                      activeSession,
                                      isNewSessionSelection,
+                                     sessionCreationPending,
                                      onBitbucketStatusChange,
                                      onBranchChange,
                                      onProjectChange,
@@ -45,6 +47,7 @@ export const SessionSelection = ({
                 <SearchableSelect
                     id="session-picker"
                     value={selectedSessionId}
+                    disabled={sessionCreationPending}
                     onChange={(nextValue) =>
                         onSessionSelect(nextValue as SessionSelectValue)
                     }
@@ -60,12 +63,14 @@ export const SessionSelection = ({
                 <>
                     <BitbucketProjectPicker
                         value={selectedProject?.uuid ?? null}
+                        disabled={sessionCreationPending}
                         onChange={onProjectChange}
                         onStatusChange={onBitbucketStatusChange}
                     />
                     <BitbucketBranchPicker
                         project={selectedProject}
                         value={selectedBranch?.id ?? null}
+                        disabled={sessionCreationPending}
                         onChange={onBranchChange}
                     />
                 </>

@@ -11,8 +11,7 @@ import {
 } from "@/lib/bitbucket/client";
 import {ensureFreshSession, readBitbucketSession} from "@/app/api/sessions/utils";
 import {mapSessionDetails, mapSessionSummary, type SessionContextFile,} from "@/app/api/sessions/mapper";
-
-const MAX_FILES = 20;
+import {AI_FOLDER_MAX_FILES} from "@/lib/bitbucket/config";
 
 const createSessionSchema = z.object({
     project: z.object({
@@ -108,9 +107,9 @@ export async function POST(request: NextRequest) {
                     entry.path.toLowerCase().endsWith(".mdc"),
             );
 
-            const limitedEntries = mdcEntries.slice(0, MAX_FILES);
+            const limitedEntries = mdcEntries.slice(0, AI_FOLDER_MAX_FILES);
             contextTruncated =
-                listing.files.length > MAX_FILES ||
+                listing.files.length > AI_FOLDER_MAX_FILES ||
                 mdcEntries.length > limitedEntries.length;
 
             const files: SessionContextFile[] = [];

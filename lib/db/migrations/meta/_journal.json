@@ -12,6 +12,20 @@
     {
       "idx": 1,
       "version": "7",
+      "when": 1719997972944,
+      "tag": "0001_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1719997972944,
+      "tag": "0002_bitbucket_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
       "when": 1763998997000,
       "tag": "0003_session_persistence",
       "breakpoints": true

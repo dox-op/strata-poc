@@ -23,6 +23,7 @@ interface BitbucketBranchPickerProps {
     project: BitbucketProject | null;
     value?: string | null;
     onChange?: (branch: BitbucketBranch | null) => void;
+    disabled?: boolean;
 }
 
 const BranchesEmptyState = () => (
@@ -35,6 +36,7 @@ export const BitbucketBranchPicker = ({
                                           project,
                                           value,
                                           onChange,
+                                          disabled = false,
                                       }: BitbucketBranchPickerProps) => {
     const [status, setStatus] = useState<Status>("idle");
     const [branches, setBranches] = useState<BitbucketBranch[]>([]);
@@ -261,6 +263,7 @@ export const BitbucketBranchPicker = ({
                         variant="outline"
                         size="sm"
                         onClick={() => void loadBranches()}
+                        disabled={disabled}
                     >
                         Try again
                     </Button>
@@ -268,7 +271,7 @@ export const BitbucketBranchPicker = ({
             )}
 
             {status === "disconnected" && (
-                <Button onClick={handleLogin} size="sm">
+                <Button onClick={handleLogin} size="sm" disabled={disabled}>
                     log in Bitbucket
                 </Button>
             )}
@@ -290,6 +293,7 @@ export const BitbucketBranchPicker = ({
                             silent: sortedBranches.length > 0,
                         })
                     }
+                    disabled={disabled}
                 />
             )}
         </div>

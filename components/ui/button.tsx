@@ -12,10 +12,10 @@ const buttonVariants = tv({
             destructive:
                 "bg-destructive text-destructive-foreground hover:bg-destructive/90",
             outline:
-                "border border-input bg-background hover:bg-accent hover:text-accent-foreground disabled:border-muted",
+                "border border-input bg-background hover:bg-accent hover:text-white dark:hover:text-white disabled:border-muted",
             secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
             ghost:
-                "hover:bg-accent hover:text-accent-foreground disabled:bg-transparent",
+                "hover:bg-accent hover:text-white dark:hover:text-white disabled:bg-transparent",
             link: "text-primary underline-offset-4 hover:underline disabled:bg-transparent disabled:no-underline",
         },
         size: {

@@ -22,6 +22,7 @@ interface BitbucketProjectPickerProps {
     value?: string | null;
     onChange?: (project: BitbucketProject | null) => void;
     onStatusChange?: (status: Status) => void;
+    disabled?: boolean;
 }
 
 const ProjectsEmptyState = () => (
@@ -34,6 +35,7 @@ export const BitbucketProjectPicker = ({
                                            value,
                                            onChange,
                                            onStatusChange,
+                                           disabled = false,
                                        }: BitbucketProjectPickerProps) => {
     const [status, setStatus] = useState<Status>("loading");
     const [projects, setProjects] = useState<BitbucketProject[]>([]);
@@ -197,6 +199,7 @@ export const BitbucketProjectPicker = ({
                         variant="outline"
                         size="sm"
                         onClick={() => void loadProjects()}
+                        disabled={disabled}
                     >
                         Try again
                     </Button>
@@ -204,7 +207,7 @@ export const BitbucketProjectPicker = ({
             )}
 
             {status === "disconnected" && (
-                <Button onClick={handleLogin} size="sm">
+                <Button onClick={handleLogin} size="sm" disabled={disabled}>
                     log in Bitbucket
                 </Button>
             )}
@@ -224,6 +227,7 @@ export const BitbucketProjectPicker = ({
                             silent: sortedProjects.length > 0,
                         })
                     }
+                    disabled={disabled}
                 />
             )}
 

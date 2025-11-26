@@ -6,14 +6,13 @@ import {
     fetchFileContent,
 } from "@/lib/bitbucket/client";
 import {ensureFreshSession, readBitbucketSession} from "@/app/api/sessions/utils";
+import {AI_FOLDER_MAX_FILES} from "@/lib/bitbucket/config";
 
 type AiFolderContent = {
     path: string;
     content: string;
     truncated: boolean;
 };
-
-const MAX_FILES = 20;
 
 export async function GET(request: NextRequest) {
     try {
@@ -69,7 +68,7 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const limitedFiles = listing.files.slice(0, MAX_FILES);
+        const limitedFiles = listing.files.slice(0, AI_FOLDER_MAX_FILES);
         const contents: AiFolderContent[] = [];
 
         for (const entry of limitedFiles) {
@@ -97,7 +96,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             folderExists: true,
             files: contents,
-            truncated: listing.files.length > MAX_FILES,
+            truncated: listing.files.length > AI_FOLDER_MAX_FILES,
         });
     } catch (error) {
         if (error instanceof Error && error.message === "unauthorized") {

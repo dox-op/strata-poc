@@ -49,6 +49,8 @@ export const useSessionManager = ({
     const [pendingPersistEnabled, setPendingPersistEnabled] = useState(false)
     const [isPersistTogglePending, setIsPersistTogglePending] = useState(false)
     const [isPersistActionPending, setIsPersistActionPending] = useState(false)
+    const [isSessionCreationPending, setIsSessionCreationPending] =
+        useState(false)
 
     const sessionCreationTimerRef =
         useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -208,6 +210,54 @@ export const useSessionManager = ({
         [applySessionContext],
     )
 
+    const refreshPersistState = useCallback(
+        async (sessionId: string) => {
+            try {
+                const response = await fetch(
+                    `/api/sessions/${sessionId}/persist`,
+                    {cache: "no-store"},
+                )
+                if (!response.ok) {
+                    return
+                }
+
+                const data = (await response.json()) as {
+                    persist: SessionDetails["persist"]
+                }
+
+                const {persist} = data
+                setSessions((prev) =>
+                    prev.map((session) =>
+                        session.id === sessionId
+                            ? {
+                                ...session,
+                                persist: {
+                                    allowWrites: persist.allowWrites,
+                                    hasPendingChanges: persist.hasPendingChanges,
+                                    draftCount: persist.draftCount,
+                                    pr: persist.pr,
+                                },
+                            }
+                            : session,
+                    ),
+                )
+
+                setActiveSession((prev) => {
+                    if (!prev || prev.id !== sessionId) {
+                        return prev
+                    }
+                    return {
+                        ...prev,
+                        persist,
+                    }
+                })
+            } catch (error) {
+                console.error("Failed to refresh persist state", error)
+            }
+        },
+        [],
+    )
+
     const createSession = useCallback(
         async (project: BitbucketProject, branch: BitbucketBranch) => {
             clearConversation()
@@ -275,6 +325,7 @@ export const useSessionManager = ({
                 setActiveSession(null)
             } finally {
                 sessionCreationTimerRef.current = null
+                setIsSessionCreationPending(false)
             }
         },
         [applySessionContext, pendingPersistEnabled, clearConversation],
@@ -322,50 +373,50 @@ export const useSessionManager = ({
     ])
 
     useEffect(() => {
-        if (selectedSessionId !== NEW_SESSION_OPTION) {
+        const cancelPendingCreation = () => {
             if (sessionCreationTimerRef.current) {
                 clearTimeout(sessionCreationTimerRef.current)
                 sessionCreationTimerRef.current = null
             }
+            setIsSessionCreationPending(false)
+        }
+
+        if (selectedSessionId !== NEW_SESSION_OPTION) {
+            cancelPendingCreation()
             return
         }
 
         if (bitbucketStatus !== "linked") {
-            if (!sessionCreationTimerRef.current) {
-                setSessionContextState("auth-required")
-                setSessionContextError("Log in to Bitbucket to create a session.")
-                setSessionContextMetadata(null)
-            }
+            cancelPendingCreation()
+            setSessionContextState("auth-required")
+            setSessionContextError("Log in to Bitbucket to create a session.")
+            setSessionContextMetadata(null)
             return
         }
 
         if (!selectedProject || !selectedBranch) {
-            if (!sessionCreationTimerRef.current) {
-                setSessionContextState("idle")
-                setSessionContextError(null)
-                setSessionContextMetadata(null)
-            }
+            cancelPendingCreation()
+            setSessionContextState("idle")
+            setSessionContextError(null)
+            setSessionContextMetadata(null)
             return
         }
 
-        if (sessionCreationTimerRef.current) {
-            clearTimeout(sessionCreationTimerRef.current)
-        }
-
+        cancelPendingCreation()
         setSessionContextState("loading")
         setSessionContextError(null)
         setSessionContextMetadata(null)
+        setIsSessionCreationPending(true)
 
         sessionCreationTimerRef.current = setTimeout(() => {
             sessionCreationTimerRef.current = null
-            void createSession(selectedProject, selectedBranch)
+            void createSession(selectedProject, selectedBranch).finally(() => {
+                setIsSessionCreationPending(false)
+            })
         }, 2000)
 
         return () => {
-            if (sessionCreationTimerRef.current) {
-                clearTimeout(sessionCreationTimerRef.current)
-                sessionCreationTimerRef.current = null
-            }
+            cancelPendingCreation()
         }
     }, [
         selectedSessionId,
@@ -380,9 +431,11 @@ export const useSessionManager = ({
     const persistCheckboxChecked = isNewSessionSelection
         ? pendingPersistEnabled
         : activeSession?.persist.allowWrites ?? false
-    const persistCheckboxDisabled = isNewSessionSelection
-        ? !selectedProject || !selectedBranch
-        : !activeSession || isPersistTogglePending
+    const persistCheckboxDisabled =
+        isSessionCreationPending ||
+        (isNewSessionSelection
+            ? !selectedProject || !selectedBranch
+            : !activeSession || isPersistTogglePending)
 
     const persistButtonState: PersistButtonState = activeSession?.persist.allowWrites
         ? activeSession.persist.pr
@@ -564,5 +617,7 @@ export const useSessionManager = ({
         setSelectedProject,
         selectedSessionId,
         loadSessionDetails,
+        refreshPersistState,
+        isSessionCreationPending,
     }
 }

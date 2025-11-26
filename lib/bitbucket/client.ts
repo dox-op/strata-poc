@@ -97,42 +97,73 @@ export const fetchAiFolderListing = async (
     repository: string,
     branch: string,
 ): Promise<{ exists: boolean; files: BitbucketDirectoryEntry[] }> => {
+    const workspaceId = encodeURIComponent(workspace);
+    const repositoryId = encodeURIComponent(repository);
+    const branchId = encodeURIComponent(branch);
+    const baseUrl = `https://api.bitbucket.org/2.0/repositories/${workspaceId}/${repositoryId}/src/${branchId}`;
+
     const files: BitbucketDirectoryEntry[] = [];
-    let url = `https://api.bitbucket.org/2.0/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repository)}/src/${encodeURIComponent(branch)}/ai?pagelen=100`;
+    const visited = new Set<string>();
+    const queue: string[] = ["ai"];
+    let rootExists = false;
 
-    while (url) {
-        const response = await fetch(url, {
-            headers: withAuthHeader(accessToken),
-            cache: "no-store",
-        });
+    const buildUrl = (path: string) => `${baseUrl}/${encodeURI(path)}?pagelen=100`;
 
-        if (response.status === 404) {
-            return {exists: false, files: []};
+    while (queue.length > 0) {
+        const currentPath = queue.shift()!;
+        if (visited.has(currentPath)) {
+            continue;
         }
+        visited.add(currentPath);
 
-        if (response.status === 401) {
-            throw new Error("unauthorized");
-        }
+        let url = buildUrl(currentPath);
+        while (url) {
+            const response = await fetch(url, {
+                headers: withAuthHeader(accessToken),
+                cache: "no-store",
+            });
 
-        if (!response.ok) {
-            throw new Error("ai_folder_listing_failed");
-        }
-
-        const json = (await response.json()) as {
-            values?: BitbucketDirectoryEntry[];
-            next?: string;
-        };
-
-        for (const entry of json.values ?? []) {
-            if (entry?.type === "commit_file" && entry.path) {
-                files.push(entry);
+            if (response.status === 404) {
+                if (currentPath === "ai" && !rootExists) {
+                    return {exists: false, files: []};
+                }
+                break;
             }
-        }
 
-        url = json.next ?? "";
+            if (response.status === 401) {
+                throw new Error("unauthorized");
+            }
+
+            if (!response.ok) {
+                throw new Error("ai_folder_listing_failed");
+            }
+
+            const json = (await response.json()) as {
+                values?: BitbucketDirectoryEntry[];
+                next?: string;
+            };
+
+            if (currentPath === "ai") {
+                rootExists = true;
+            }
+
+            for (const entry of json.values ?? []) {
+                if (!entry?.path) {
+                    continue;
+                }
+
+                if (entry.type === "commit_file") {
+                    files.push(entry);
+                } else if (entry.type === "commit_directory") {
+                    queue.push(entry.path);
+                }
+            }
+
+            url = json.next ?? "";
+        }
     }
 
-    return {exists: true, files};
+    return {exists: rootExists, files};
 };
 
 export const fetchRepositoryBranches = async (
