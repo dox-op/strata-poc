@@ -1,0 +1,11 @@
+# AI Meta Index
+
+This directory hosts Strata's operating guardrails.
+
+## Contents
+
+- [Best Practices](./best-practices.mdc) — master entry point for detailed guidelines.
+- [`best-practices/`](./best-practices/) — catalog of topic-specific guardrails (architecture, logging, taxonomy, etc.).
+- (Optional) `migration-brief.mdc` — summarize large refactors or onboarding updates when needed.
+
+Use this index to keep track of any new meta-level documents added to Strata.

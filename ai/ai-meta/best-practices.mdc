@@ -1,0 +1,16 @@
+# Development Best Practices
+
+## How to Use
+
+- Read this file to discover which detailed guardrails are available.
+- Visit each linked `.mdc` under `ai/ai-meta/best-practices/` for concrete checklists and examples.
+- When Strata creates or modifies knowledge, ensure the relevant guideline is respected (and update it if
+  project-specific rules evolve).
+
+## Catalog
+
+1. [Component & Knowledge Architecture](./best-practices/index.mdc)
+2. [Persistency Layer Lifecycle](./best-practices/best-practice-lifecycle.mdc) *(create as needed)*
+3. [Logging & Observability](./best-practices/logging.mdc) *(placeholder for future rules)*
+
+> Add new entries here whenever a guardrail is introduced so the agent can discover it automatically.

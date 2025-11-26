@@ -1,0 +1,8 @@
+# Best Practice Lifecycle
+
+1. **Define** – capture the pain point, owner, and desired outcome inside this file.
+2. **Pilot** – apply the guardrail within a limited scope (e.g., one feature team) and record feedback.
+3. **Adopt** – socialize in Strata sessions, update `ai/ai-meta/best-practices.mdc`, and ensure summaries/indexes
+   reference it.
+4. **Enforce** – add automated checks (linting, CI, review templates) where possible.
+5. **Evolve** – revisit after each release cycle; archive or merge guidelines when redundant.

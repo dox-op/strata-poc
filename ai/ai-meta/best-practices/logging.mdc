@@ -1,0 +1,6 @@
+# Logging & Observability Guardrails
+
+- Emit structured logs with context keys: `sessionId`, `workspace`, `repository`, `persistAction`.
+- Redact secrets (OAuth tokens, Jira credentials) before logging.
+- For persistency-layer writes, log whether write mode was enabled and which `.mdc` paths were touched.
+- Surface PR creation/update events to monitoring dashboards so product owners can track knowledge freshness.

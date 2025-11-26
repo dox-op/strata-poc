@@ -1,0 +1,9 @@
+# Integrations Index
+
+Track how Strata interacts with external systems:
+
+- Collaboration tooling (Teams, Read.ai) used for requirement intake.
+- Jira automation (future) for task creation.
+- Code repositories (Bitbucket) for persistency-layer PRs.
+
+Create a dedicated `.mdc` per integration as flows mature and link them here.

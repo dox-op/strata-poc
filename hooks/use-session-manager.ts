@@ -527,7 +527,7 @@ export const useSessionManager = ({
         } finally {
             setIsPersistActionPending(false)
         }
-    }, [activeSession, selectedSessionId, loadSessionDetails, appendPersistAnnouncement])
+    }, [activeSession, selectedSessionId, loadSessionDetails])
 
     return {
         activeSession,

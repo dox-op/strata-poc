@@ -1,0 +1,31 @@
+# Functional Summary
+
+## Mission
+
+Strata transforms the persistency layer into a living, conversational knowledge base that replaces static documentation.
+The chatbot (“Strata”) orchestrates creation, validation, and distribution of `.mdc` knowledge for every feature.
+
+## Personas
+
+- **Functional Leads** – capture requirements, refine tasks within Strata, author Jira issues, and open
+  persistency-layer PRs.
+- **Developers** – consume tasks, ensure the layer is updated in their first commit, and adjust inherited knowledge.
+- **Clients** – benefit from consistently curated outputs and up-to-date insights.
+
+## Core Workflow (Single Feature)
+
+1. Capture requirement via external tooling (Teams, Read.ai, ChatGPT).
+2. Refine and validate inside a Strata session; consult relevant `.mdc` files.
+3. Create Jira task (future automation) once scope is stable.
+4. Persist requirement + chain of thought by opening/refreshing a dedicated PR (future automation for branch/PR
+   creation).
+5. Developers implement the feature with the updated layer, adapting any preloaded knowledge.
+6. After merge, new sessions inherit the updated context automatically.
+
+## Automation Backlog
+
+- Auto-hydrate sessions with relevant codebase file summaries.
+- Auto-create Jira tasks from validated Strata outputs.
+- Auto-create/update persistency PR branches per task.
+
+Keep this summary synchronized whenever workflows change.

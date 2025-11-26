@@ -1,0 +1,9 @@
+# Taxonomy Index
+
+Define shared vocabulary for Strata:
+
+- Personas (Functional Lead, Developer, Client).
+- Workflow stages (Capture, Refine, Persist, Implement, Merge).
+- Knowledge artifacts (Requirement Draft, Validated Task, Persistency PR).
+
+Create specific taxonomy `.mdc` entries and reference them here so every session uses consistent language.

@@ -1,0 +1,9 @@
+# Acceptance Index
+
+Document feature-level acceptance criteria here. For each feature:
+
+1. Describe the user story and persona.
+2. List acceptance bullets referencing `.mdc` requirements or technical docs.
+3. Capture any Strata-specific checkpoints (e.g., write mode enabled, PR created).
+
+Add new `.mdc` files under this folder and link them from this index.

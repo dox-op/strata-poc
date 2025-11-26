@@ -1,0 +1,13 @@
+# Functional Knowledge Index
+
+Use this file to navigate Strata's functional knowledge.
+
+## Key Entries
+
+- [Summary](./summary.mdc) — high-level goals, personas, and workflows.
+- `acceptance/index.mdc` — entry points for feature-level acceptance criteria.
+- `integrations/index.mdc` — contracts with external tools (Teams, Read.ai, Jira, future automations).
+- `requirements/index.mdc` — lifecycle and UI/UX requirements for Strata sessions.
+- `taxonomy/index.mdc` — canonical problem and persona taxonomy.
+
+Always update this index when new functional areas are introduced.

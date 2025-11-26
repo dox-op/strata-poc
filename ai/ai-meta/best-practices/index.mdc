@@ -1,0 +1,14 @@
+# Best Practices Catalog
+
+This folder hosts detailed, topic-specific guidelines used by Strata and human teammates. Each file should:
+
+- Describe the intent and scope.
+- Provide actionable checklists or patterns.
+- Reference other `.mdc` files when dependencies exist.
+
+## Initial Stubs
+
+- `best-practice-lifecycle.mdc` — how to introduce, socialize, and retire a guardrail.
+- `logging.mdc` — standards for structured logs, observability tags, and escalation workflows.
+
+Add more `.mdc` files here as the project grows (e.g., "prompt-engineering.mdc", "functional-taxonomy-updates.mdc").

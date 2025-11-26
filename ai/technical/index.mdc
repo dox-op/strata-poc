@@ -1,0 +1,11 @@
+# Technical Index
+
+This folder captures architecture, operations, and decision records for Strata.
+
+## Initial Topics
+
+- Session architecture (Next.js API routes, `useChat`, Bitbucket OAuth).
+- Persistency layer tooling (write mode flag, PR creation endpoint).
+- Future automation stack (Jira integration, codebase hydration service).
+
+Add dedicated `.mdc` files here and keep this index updated as the PoC evolves.

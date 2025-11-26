@@ -1,0 +1,9 @@
+# Requirements Index
+
+Use this folder for cross-cutting lifecycle and UI requirements. Suggested topics:
+
+- Session lifecycle (creation, write mode, PR status button).
+- Prompt UX and accessibility.
+- Persistency layer governance (per-prompt write mode, summaries, indexing rules).
+
+Link each detailed `.mdc` here so stakeholders can navigate requirements quickly.
