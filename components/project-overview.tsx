@@ -17,17 +17,21 @@ const ProjectOverview = () => {
           <InformationIcon />
         </p>
           <p>
-              Strata POC is a passive-to-active chat assistant that syncs Bitbucket
-              sessions with a persistency layer. Pick a project + branch, decide if the
-              AI can write to <code>ai/</code>, and chat. When allowed, responses can be
-              staged into drafts and pushed via auto-generated pull requests so every
-              change stays reviewable.
+              Strata turns the <code>ai/</code> directory into a living persistency layer:
+              every `.mdc` file becomes the canonical source of truth for functional,
+              technical, and agent guardrails. Sessions load that context automatically so
+              functional leads, developers, and clients share the same knowledge.
           </p>
           <p>
-              Context comes from the repository’s <code>ai/</code> directory, which we
-              index and feed into the model. Any write operation is gated by your
-              session preference and always limited to that folder, ensuring the rest
-              of the codebase stays untouched.
+              Prompt-by-prompt the <strong>read-only toggle</strong> keeps the AI from altering
+              the layer until you explicitly allow it. Disable read-only when you want Strata
+              to queue `.mdc` drafts that flow into a dedicated Bitbucket PR—keeping the layer
+              reviewable and versioned like code.
+          </p>
+          <p>
+              Workflows: capture requirements externally, refine them in Strata, create the
+              Jira task, and persist the chain of thought via PR. Developers then implement
+              the feature with the latest knowledge, and merged PRs refresh future sessions.
           </p>
       </div>
     </motion.div>

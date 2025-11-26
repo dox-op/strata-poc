@@ -32,6 +32,10 @@ export const sessions = pgTable("sessions", {
     persistPrBranch: varchar("persist_pr_branch", {length: 191}),
     persistPrTitle: text("persist_pr_title"),
     persistUpdatedAt: timestamp("persist_updated_at", {withTimezone: false}),
+    jiraTaskKey: varchar("jira_task_key", {length: 191}),
+    jiraTaskUrl: text("jira_task_url"),
+    jiraTaskSummary: text("jira_task_summary"),
+    jiraTaskCreatedAt: timestamp("jira_task_created_at", {withTimezone: false}),
     createdAt: timestamp("created_at", {withTimezone: false})
         .defaultNow()
         .notNull(),

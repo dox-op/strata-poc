@@ -11,7 +11,17 @@ import {and, eq} from "drizzle-orm";
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
+const PERSISTENCY_LAYER_BASIC_RULES = `
+Strata taxonomy baseline:
+- Personas: Functional Lead, Developer, Client.
+- Workflow stages: Capture → Refine → Persist → Implement → Merge.
+- Knowledge artifacts: Requirement Draft, Validated Task, Persistency PR.
+- Jira tickets and ai/ updates must reference these shared terms so every stakeholder reads consistent language.
+`;
+
 const PERSISTENCY_LAYER_RULES = `
+${PERSISTENCY_LAYER_BASIC_RULES}
+
 Persistency layer guardrails (apply even if some files are missing for the current branch):
 - The persistency layer is a human-legible knowledge base made of .mdc files inside the ai/ directory.
 - ai/ai-bootstrap.mdc explains how the layer is organised. Treat it as mandatory and consult it before touching other folders.
@@ -313,8 +323,8 @@ export async function POST(req: Request) {
     );
 
     const persistenceGuidance = writeModeEnabled
-        ? "Write mode is enabled for this prompt. When the user asks you to write to the persistency layer (ai/ folder), call the writeAiFile tool with the full updated .mdc content for the appropriate ai/ path. These updates will be committed back to the selected Bitbucket project/branch and used to create or update the pull request, so only send text that should exist in the repository and never leave the ai/ directory."
-        : "Write mode is disabled for this prompt. This session is read-only for now, so do not attempt to update the persistency layer (ai/ folder) or call the writeAiFile tool.";
+        ? "Read-only is disabled for this prompt (write mode enabled). When the user asks you to update the persistency layer (ai/ folder), call the writeAiFile tool with the full .mdc content for the appropriate ai/ path. These updates will be committed back to the selected Bitbucket project/branch and used to create or update the pull request, so only send text that should exist in the repository and never leave the ai/ directory."
+        : "Read-only is enabled for this prompt, so do not attempt to update the persistency layer (ai/ folder) or call the writeAiFile tool.";
 
     const result = streamText({
         model: "openai/gpt-4o",
@@ -428,7 +438,7 @@ export async function POST(req: Request) {
                 }),
                 execute: async ({path, content, summary}) => {
                     if (!writeModeEnabled) {
-                        return "Write mode is disabled for this prompt. Ask the user to enable write mode if they want to update the persistency layer.";
+                        return "The prompt is currently read-only. Ask the user to disable read-only if they want to update the persistency layer.";
                     }
 
                     if (!content || content.trim().length === 0) {

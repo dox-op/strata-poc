@@ -447,8 +447,8 @@ export const useSessionManager = ({
             : activeSession.persist.draftCount > 0
                 ? `${activeSession.persist.draftCount} persistency layer draft${
                     activeSession.persist.draftCount === 1 ? "" : "s"
-                } ready to create a PR. Use write mode for prompts that should update the persistency layer.`
-                : "Enable write mode for prompts when you need to queue persistency layer changes."
+                } ready to create a PR. Disable the read-only prompt toggle for requests that should update the persistency layer.`
+                : "Disable the read-only prompt toggle when you need to queue persistency layer changes."
         : null
 
     const handleSessionSelect = useCallback(
@@ -470,6 +470,59 @@ export const useSessionManager = ({
             setSelectedSessionId(value)
         },
         [bitbucketStatus, clearConversation],
+    )
+
+    const recordJiraTask = useCallback(
+        async (
+            sessionId: string,
+            payload: { url: string; key?: string | null; summary?: string | null },
+        ) => {
+            const response = await fetch(`/api/sessions/${sessionId}/jira-task`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    url: payload.url,
+                    key: payload.key ?? null,
+                    summary: payload.summary ?? null,
+                }),
+            })
+
+            const json = (await response.json().catch(() => null)) as
+                | { jiraTask?: SessionDetails["jiraTask"]; error?: string }
+                | null
+
+            if (!response.ok || !json) {
+                throw new Error(json?.error ?? "jira_task_update_failed")
+            }
+
+            const data = json as {
+                jiraTask: SessionDetails["jiraTask"]
+            }
+
+            setSessions((prev) =>
+                prev.map((session) =>
+                    session.id === sessionId
+                        ? {
+                            ...session,
+                            jiraTask: data.jiraTask,
+                        }
+                        : session,
+                ),
+            )
+
+            setActiveSession((prev) => {
+                if (!prev || prev.id !== sessionId) {
+                    return prev
+                }
+                return {
+                    ...prev,
+                    jiraTask: data.jiraTask,
+                }
+            })
+
+            return data.jiraTask
+        },
+        [],
     )
 
     const handlePersistAction = useCallback(async () => {
@@ -552,5 +605,6 @@ export const useSessionManager = ({
         loadSessionDetails,
         refreshPersistState,
         isSessionCreationPending,
+        recordJiraTask,
     }
 }

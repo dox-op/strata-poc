@@ -30,6 +30,7 @@ export const summarizeSession = (session: SessionDetails): SessionSummary => ({
         draftCount: session.persist.draftCount,
         pr: session.persist.pr,
     },
+    jiraTask: session.jiraTask,
 })
 
 export const buildSessionContextPayload = (

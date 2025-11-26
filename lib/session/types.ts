@@ -50,6 +50,13 @@ export type SessionPersistDraft = {
     updatedAt: string
 }
 
+export type SessionJiraTask = {
+    key: string | null
+    url: string
+    summary: string | null
+    createdAt: string | null
+}
+
 export type SessionSummary = {
     id: string
     label: string
@@ -80,6 +87,7 @@ export type SessionSummary = {
         fileCount: number
     }
     persist: SessionPersistSummary
+    jiraTask: SessionJiraTask | null
 }
 
 export type SessionDetails = Omit<SessionSummary, "context"> & {

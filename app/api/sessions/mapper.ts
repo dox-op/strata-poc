@@ -56,6 +56,16 @@ export const mapSessionSummary = (session: SessionRow) => {
                 }
                 : null,
         },
+        jiraTask: session.jiraTaskUrl
+            ? {
+                key: session.jiraTaskKey ?? null,
+                url: session.jiraTaskUrl,
+                summary: session.jiraTaskSummary ?? null,
+                createdAt: session.jiraTaskCreatedAt
+                    ? session.jiraTaskCreatedAt.toISOString()
+                    : null,
+            }
+            : null,
     };
 };
 
