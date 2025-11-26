@@ -26,7 +26,6 @@ export const summarizeSession = (session: SessionDetails): SessionSummary => ({
         fileCount: session.context.files.length,
     },
     persist: {
-        allowWrites: session.persist.allowWrites,
         hasPendingChanges: session.persist.hasPendingChanges,
         draftCount: session.persist.draftCount,
         pr: session.persist.pr,

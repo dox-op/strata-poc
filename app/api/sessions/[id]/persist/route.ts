@@ -13,11 +13,13 @@ import {ensureFreshSession, readBitbucketSession} from "@/app/api/sessions/utils
 
 const encode = (value: string) => encodeURIComponent(value);
 
+type RouteParams = { id?: string };
+
 export async function GET(
     _request: NextRequest,
-    {params}: { params: { id?: string } },
+    {params}: { params: Promise<RouteParams> },
 ) {
-    const sessionId = params.id;
+    const sessionId = (await params).id;
     if (!sessionId) {
         return NextResponse.json({error: "session_id_required"}, {status: 400});
     }
@@ -43,9 +45,17 @@ export async function GET(
             ? Number(session.persistDraftCount)
             : drafts.length;
 
+    console.info(
+        "[persist:get]",
+        JSON.stringify({
+            sessionId,
+            draftCount,
+            hasPendingChanges: session.persistHasChanges,
+        }),
+    );
+
     return NextResponse.json({
         persist: {
-            allowWrites: session.persistAllowWrites,
             hasPendingChanges: session.persistHasChanges,
             draftCount,
             drafts: drafts.map((draft) => ({
@@ -72,9 +82,9 @@ export async function GET(
 
 export async function POST(
     request: NextRequest,
-    {params}: { params: { id?: string } },
+    {params}: { params: Promise<RouteParams> },
 ) {
-    const sessionId = params.id;
+    const sessionId = (await params).id;
     if (!sessionId) {
         return NextResponse.json({error: "session_id_required"}, {status: 400});
     }
@@ -87,13 +97,6 @@ export async function POST(
 
     if (!session) {
         return NextResponse.json({error: "session_not_found"}, {status: 404});
-    }
-
-    if (!session.persistAllowWrites) {
-        return NextResponse.json(
-            {error: "persistence_disabled"},
-            {status: 400},
-        );
     }
 
     if (!session.workspaceSlug) {
@@ -114,6 +117,10 @@ export async function POST(
         );
 
     if (drafts.length === 0) {
+        console.warn(
+            "[persist:post] No pending drafts",
+            JSON.stringify({sessionId}),
+        );
         return NextResponse.json(
             {error: "no_pending_ai_changes"},
             {status: 400},
@@ -208,6 +215,18 @@ export async function POST(
             draft.path.split("/").pop() ?? "ai.mdc",
         );
     });
+
+    console.info(
+        "[persist:post] Commit",
+        JSON.stringify({
+            sessionId,
+            workspace,
+            repository,
+            featureBranch,
+            destinationBranch,
+            draftCount: drafts.length,
+        }),
+    );
 
     const commitResponse = await fetch(
         `https://api.bitbucket.org/2.0/repositories/${encode(workspace)}/${encode(
@@ -316,6 +335,17 @@ export async function POST(
             updatedAt: now,
         })
         .where(eq(sessions.id, sessionId));
+
+    console.info(
+        "[persist:post] Completed",
+        JSON.stringify({
+            sessionId,
+            branch: featureBranch,
+            status: session.persistPrId ? "updated" : "created",
+            prUrl,
+            remainingDrafts: hasPending ? pending : 0,
+        }),
+    );
 
     return NextResponse.json({
         status: session.persistPrId ? "updated" : "created",

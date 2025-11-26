@@ -32,7 +32,6 @@ const createSessionSchema = z.object({
         slug: z.string().min(1),
         name: z.string().min(1),
     }),
-    allowPersist: z.boolean().optional(),
 });
 
 export async function GET() {
@@ -187,7 +186,6 @@ export async function POST(request: NextRequest) {
             contextTruncated,
             contextHasBootstrap,
             contextFiles,
-            persistAllowWrites: payload.allowPersist ?? false,
             createdAt: now,
             updatedAt: now,
         })

@@ -42,7 +42,6 @@ export const mapSessionSummary = (session: SessionRow) => {
             fileCount: files?.length ?? 0,
         },
         persist: {
-            allowWrites: session.persistAllowWrites,
             hasPendingChanges: session.persistHasChanges,
             draftCount: Number(session.persistDraftCount ?? 0),
             pr: session.persistPrId

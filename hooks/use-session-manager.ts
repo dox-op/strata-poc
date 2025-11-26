@@ -46,8 +46,6 @@ export const useSessionManager = ({
     )
     const [sessionContextMetadata, setSessionContextMetadata] =
         useState<SessionContextMetadata | null>(null)
-    const [pendingPersistEnabled, setPendingPersistEnabled] = useState(false)
-    const [isPersistTogglePending, setIsPersistTogglePending] = useState(false)
     const [isPersistActionPending, setIsPersistActionPending] = useState(false)
     const [isSessionCreationPending, setIsSessionCreationPending] =
         useState(false)
@@ -232,7 +230,6 @@ export const useSessionManager = ({
                             ? {
                                 ...session,
                                 persist: {
-                                    allowWrites: persist.allowWrites,
                                     hasPendingChanges: persist.hasPendingChanges,
                                     draftCount: persist.draftCount,
                                     pr: persist.pr,
@@ -290,7 +287,6 @@ export const useSessionManager = ({
                             slug: branch.repository.slug,
                             name: branch.repository.name,
                         },
-                        allowPersist: pendingPersistEnabled,
                     }),
                 })
 
@@ -328,7 +324,7 @@ export const useSessionManager = ({
                 setIsSessionCreationPending(false)
             }
         },
-        [applySessionContext, pendingPersistEnabled, clearConversation],
+        [applySessionContext, clearConversation],
     )
 
     useEffect(() => {
@@ -428,26 +424,15 @@ export const useSessionManager = ({
 
     const isNewSessionSelection = selectedSessionId === NEW_SESSION_OPTION
 
-    const persistCheckboxChecked = isNewSessionSelection
-        ? pendingPersistEnabled
-        : activeSession?.persist.allowWrites ?? false
-    const persistCheckboxDisabled =
-        isSessionCreationPending ||
-        (isNewSessionSelection
-            ? !selectedProject || !selectedBranch
-            : !activeSession || isPersistTogglePending)
-
-    const persistButtonState: PersistButtonState = activeSession?.persist.allowWrites
-        ? activeSession.persist.pr
+    const persistButtonState: PersistButtonState =
+        activeSession?.persist.pr != null
             ? activeSession.persist.hasPendingChanges
                 ? "update"
                 : "review"
             : "create"
-        : "create"
 
     const persistActionDisabled =
         !activeSession ||
-        !activeSession.persist.allowWrites ||
         isPersistActionPending ||
         (persistButtonState === "review"
             ? !activeSession.persist.pr?.url
@@ -455,17 +440,15 @@ export const useSessionManager = ({
             activeSession.persist.draftCount === 0)
 
     const persistHelperText = activeSession
-        ? activeSession.persist.allowWrites
-            ? activeSession.persist.pr
-                ? activeSession.persist.hasPendingChanges
-                    ? "New persistency layer changes are ready to update the pull request."
-                    : "The pull request is up to date with the latest persistency layer changes."
-                : activeSession.persist.draftCount > 0
-                    ? `${activeSession.persist.draftCount} persistency layer draft${
-                        activeSession.persist.draftCount === 1 ? "" : "s"
-                    } ready to create a PR.`
-                    : "Generate persistency layer content with the assistant to create a pull request."
-            : "Enable persistence to allow the assistant to prepare persistency layer updates."
+        ? activeSession.persist.pr
+            ? activeSession.persist.hasPendingChanges
+                ? "New persistency layer changes are ready to update the pull request."
+                : "The pull request is up to date with the latest persistency layer changes."
+            : activeSession.persist.draftCount > 0
+                ? `${activeSession.persist.draftCount} persistency layer draft${
+                    activeSession.persist.draftCount === 1 ? "" : "s"
+                } ready to create a PR. Use write mode for prompts that should update the persistency layer.`
+                : "Enable write mode for prompts when you need to queue persistency layer changes."
         : null
 
     const handleSessionSelect = useCallback(
@@ -489,55 +472,8 @@ export const useSessionManager = ({
         [bitbucketStatus, clearConversation],
     )
 
-    const handlePersistCheckboxChange = useCallback(
-        async (checked: boolean) => {
-            if (selectedSessionId === NEW_SESSION_OPTION) {
-                setPendingPersistEnabled(checked)
-                return
-            }
-
-            if (!activeSession || isPersistTogglePending) {
-                return
-            }
-
-            setIsPersistTogglePending(true)
-            try {
-                const response = await fetch(`/api/sessions/${activeSession.id}`, {
-                    method: "PATCH",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({allowPersist: checked}),
-                })
-
-                if (!response.ok) {
-                    throw new Error("failed_to_update_persist")
-                }
-
-                await loadSessionDetails(activeSession.id)
-            } catch (error) {
-                console.error("Failed to update persistence preference", error)
-                toast.error(
-                    "Unable to update the persistency layer setting. Please try again.",
-                )
-            } finally {
-                setIsPersistTogglePending(false)
-            }
-        },
-        [
-            selectedSessionId,
-            activeSession,
-            isPersistTogglePending,
-            loadSessionDetails,
-        ],
-    )
-
     const handlePersistAction = useCallback(async () => {
-        if (
-            selectedSessionId === NEW_SESSION_OPTION ||
-            !activeSession ||
-            !activeSession.persist.allowWrites
-        ) {
+        if (selectedSessionId === NEW_SESSION_OPTION || !activeSession) {
             return
         }
 
@@ -591,20 +527,17 @@ export const useSessionManager = ({
         } finally {
             setIsPersistActionPending(false)
         }
-    }, [activeSession, selectedSessionId, loadSessionDetails])
+    }, [activeSession, selectedSessionId, loadSessionDetails, appendPersistAnnouncement])
 
     return {
         activeSession,
         bitbucketStatus,
         fetchSessions,
         handlePersistAction,
-        handlePersistCheckboxChange,
         handleSessionSelect,
         isNewSessionSelection,
         persistActionDisabled,
         persistButtonState,
-        persistCheckboxChecked,
-        persistCheckboxDisabled,
         persistHelperText,
         selectedBranch,
         selectedProject,

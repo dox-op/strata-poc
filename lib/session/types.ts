@@ -31,7 +31,6 @@ export type SessionContextMetadata = {
 }
 
 export type SessionPersistSummary = {
-    allowWrites: boolean
     hasPendingChanges: boolean
     draftCount: number
     pr: {

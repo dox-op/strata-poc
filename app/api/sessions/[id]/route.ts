@@ -6,13 +6,6 @@ import {assertBitbucketConfig, fetchRepositoryBranches,} from "@/lib/bitbucket/c
 import {ensureFreshSession, readBitbucketSession} from "@/app/api/sessions/utils";
 import {mapSessionDetails} from "@/app/api/sessions/mapper";
 import {sessionAiDrafts} from "@/lib/db/schema/session-ai-drafts";
-import {z} from "zod";
-
-type SessionUpdate = typeof sessions.$inferInsert;
-
-const updateSessionSchema = z.object({
-    allowPersist: z.boolean().optional(),
-});
 
 type RouteParams = { params: Promise<{ id?: string }> }
 
@@ -78,52 +71,4 @@ export async function GET(request: NextRequest, {params}: RouteParams) {
     return NextResponse.json({
         session: mapSessionDetails(session, {branchAvailable, drafts}),
     });
-}
-
-export async function PATCH(
-    request: NextRequest,
-    {params}: RouteParams,
-) {
-    const {id: sessionId} = await params;
-
-    if (!sessionId) {
-        return NextResponse.json({error: "session_id_required"}, {status: 400});
-    }
-
-    const parseResult = updateSessionSchema.safeParse(await request.json());
-    if (!parseResult.success) {
-        return NextResponse.json(
-            {error: "invalid_request", details: parseResult.error.flatten()},
-            {status: 400},
-        );
-    }
-
-    const [session] = await db
-        .select()
-        .from(sessions)
-        .where(eq(sessions.id, sessionId))
-        .limit(1);
-
-    if (!session) {
-        return NextResponse.json({error: "session_not_found"}, {status: 404});
-    }
-
-    const updates: Partial<SessionUpdate> = {};
-
-    if (typeof parseResult.data.allowPersist === "boolean") {
-        updates.persistAllowWrites = parseResult.data.allowPersist;
-    }
-
-    if (Object.keys(updates).length === 0) {
-        return NextResponse.json({error: "no_updates"}, {status: 400});
-    }
-
-    updates.updatedAt = new Date();
-
-    await db
-        .update(sessions)
-        .set(updates)
-        .where(eq(sessions.id, sessionId));
-
-    return NextResponse.json({success: true});
 }

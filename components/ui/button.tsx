@@ -5,7 +5,7 @@ import {cn} from "@/lib/utils";
 
 const buttonVariants = tv({
     base:
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-neutral-300 disabled:text-neutral-600 disabled:opacity-80 disabled:shadow-none dark:disabled:bg-neutral-700 dark:disabled:text-neutral-300",
     variants: {
         variant: {
             default: "bg-primary text-primary-foreground hover:bg-primary/90",

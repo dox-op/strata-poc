@@ -11,6 +11,19 @@ import {and, eq} from "drizzle-orm";
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
+const PERSISTENCY_LAYER_RULES = `
+Persistency layer guardrails (apply even if some files are missing for the current branch):
+- The persistency layer is a human-legible knowledge base made of .mdc files inside the ai/ directory.
+- ai/ai-bootstrap.mdc explains how the layer is organised. Treat it as mandatory and consult it before touching other folders.
+- All .mdc files must be written entirely in English; do not mix languages when updating or creating documents.
+- ai/ai-meta/ contains agent playbooks, prompts, and best-practice catalogues (ai/ai-meta/best-practices/ expands the catalogue; migration-brief.mdc is optional per project).
+- ai/technical/ holds architecture, operations, and decision records; ai/functional/ holds functional intent, workflows, and glossaries. All of these folders, and any nested topic folder under them, must maintain an index.mdc that summarises the folder contents and structure.
+- When you create a new topic folder under ai/, immediately create an index.mdc within it so humans/agents can navigate the area.
+- Keep ai/functional/summary.mdc aligned whenever you add or change documents in ai/functional/acceptance, integrations, requirements, or taxonomy.
+- Never add manual change logs to .mdc files; overwrite content so it always reflects the current truth and rely on Git history for diffs.
+- Always reference only the ai/ directory (persistency layer). If a required summary/index file is missing, call it out and recommend adding it to restore navigability.
+`;
+
 type BitbucketContextMetadata = {
     source?: string;
     context?: {
@@ -257,8 +270,14 @@ const upsertAiDraft = async ({
 };
 
 export async function POST(req: Request) {
-    const {messages, sessionId}: { messages: UIMessage[]; sessionId?: string } =
+    const {
+        messages,
+        sessionId,
+        writeMode,
+    }: { messages: UIMessage[]; sessionId?: string; writeMode?: boolean } =
         await req.json();
+
+    const writeModeEnabled = Boolean(writeMode);
 
     if (!sessionId) {
         return NextResponse.json(
@@ -293,9 +312,9 @@ export async function POST(req: Request) {
         bitbucketContextBlocks,
     );
 
-    const persistenceGuidance = sessionRecord.persistAllowWrites
-        ? "When the user asks you to write to the persistency layer (ai/ folder), call the writeAiFile tool with the full updated .mdc content for the appropriate ai/ path. These updates will be committed back to the selected Bitbucket project/branch and used to create or update the pull request, so only send text that should exist in the repository and never leave the ai/ directory."
-        : "This session is read-only. Do not attempt to write to the persistency layer (ai/ folder) or call the writeAiFile tool.";
+    const persistenceGuidance = writeModeEnabled
+        ? "Write mode is enabled for this prompt. When the user asks you to write to the persistency layer (ai/ folder), call the writeAiFile tool with the full updated .mdc content for the appropriate ai/ path. These updates will be committed back to the selected Bitbucket project/branch and used to create or update the pull request, so only send text that should exist in the repository and never leave the ai/ directory."
+        : "Write mode is disabled for this prompt. This session is read-only for now, so do not attempt to update the persistency layer (ai/ folder) or call the writeAiFile tool.";
 
     const result = streamText({
         model: "openai/gpt-4o",
@@ -303,16 +322,17 @@ export async function POST(req: Request) {
         system: `You are a helpful assistant acting as the users' second brain.
     Use tools on every request.
     Be sure to getInformation from your knowledge base before answering any questions.
-    If the user presents infromation about themselves, use the addResource tool to store it.
+    If the user presents information about themselves, use the addResource tool to store it.
     If a response requires multiple tools, call one tool after another without responding to the user.
     If a response requires information from an additional tool to generate a response, call the appropriate tools in order before responding to the user.
     ONLY respond to questions using information from tool calls.
     if no relevant information is found in the tool calls, respond, "Sorry, I don't know."
-    Be sure to adhere to any instructions in tool calls ie. if they say to responsd like "...", do exactly that.
+    Be sure to adhere to any instructions in tool calls ie. if they say to respond like "...", do exactly that.
     If the relevant information is not a direct match to the users prompt, you can be creative in deducing the answer.
     Keep responses short and concise. Answer in a single sentence where possible.
     If you are unsure, use the getInformation tool and you can use common sense to reason based on the information you do have.
     Use your abilities as a reasoning machine to answer questions based on the information you do have.
+    ${PERSISTENCY_LAYER_RULES}
     ${persistenceGuidance}
 `,
         stopWhen: stepCountIs(5),
@@ -407,8 +427,8 @@ export async function POST(req: Request) {
                         .describe("Optional short description of the change."),
                 }),
                 execute: async ({path, content, summary}) => {
-                    if (!sessionRecord.persistAllowWrites) {
-                        return "Persistence is disabled for this session. Ask the user to enable persistency layer writes before queuing changes.";
+                    if (!writeModeEnabled) {
+                        return "Write mode is disabled for this prompt. Ask the user to enable write mode if they want to update the persistency layer.";
                     }
 
                     if (!content || content.trim().length === 0) {
