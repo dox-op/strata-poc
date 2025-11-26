@@ -187,7 +187,7 @@ export const SearchableSelect = ({
                                 placeholder={searchPlaceholder}
                                 value={query}
                                 onChange={(event) => setQuery(event.target.value)}
-                                className="h-8 w-full flex-1 bg-white text-sm dark:bg-neutral-900"
+                                className="h-8 w-full flex-1 bg-white text-sm text-neutral-800 placeholder:text-neutral-400 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500"
                             />
                             {onReload && (
                                 <button

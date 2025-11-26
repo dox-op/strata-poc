@@ -14,6 +14,7 @@ import {SessionContextStatus} from "@/components/chat/session-context-status"
 import {AssistantMessage} from "@/components/chat/assistant-message"
 import {LoadingIndicator} from "@/components/chat/loading-indicator"
 import {useSessionManager} from "@/hooks/use-session-manager"
+import {cn} from "@/lib/utils"
 
 const extractPlainText = (message: UIMessage) =>
     message.parts
@@ -264,6 +265,7 @@ export default function Chat() {
     const showDeliveryCard =
         !!activeSession &&
         (sessionHasJiraTask || (userHasRequestedJiraTask && !isReadOnlyPrompt))
+    const isPromptSectionDisabled = sessionContextState === "loading"
     const jiraTicketLabel = activeSession?.jiraTask?.key
         ? `See ticket ${activeSession.jiraTask.key}`
         : "See ticket"
@@ -339,7 +341,7 @@ export default function Chat() {
     }, [activeSession])
 
     const submitPrompt = useCallback(() => {
-        if (!canSend || !activeSession) {
+        if (!canSend || !activeSession || isPromptSectionDisabled) {
             return
         }
         if (input.trim().length === 0) {
@@ -355,7 +357,14 @@ export default function Chat() {
         if (promptInputRef.current) {
             promptInputRef.current.innerText = ""
         }
-    }, [activeSession, canSend, currentWriteMode, input, sendMessage])
+    }, [
+        activeSession,
+        canSend,
+        currentWriteMode,
+        input,
+        sendMessage,
+        isPromptSectionDisabled,
+    ])
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault()
@@ -521,7 +530,12 @@ export default function Chat() {
 
                     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
                         <div
-                            className="relative rounded-lg border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+                            className={cn(
+                                "relative rounded-lg border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900",
+                                isPromptSectionDisabled && "opacity-60",
+                            )}
+                            aria-disabled={isPromptSectionDisabled}
+                        >
                             {input.length === 0 && (
                                 <p className="pointer-events-none select-none text-sm text-neutral-400 dark:text-neutral-500 absolute left-3 top-3">
                                     Ask me anything...
@@ -531,13 +545,26 @@ export default function Chat() {
                                 ref={promptInputRef}
                                 role="textbox"
                                 aria-multiline="true"
-                                contentEditable
+                                aria-disabled={isPromptSectionDisabled}
+                                contentEditable={!isPromptSectionDisabled}
                                 suppressContentEditableWarning
-                                className="max-h-60 min-h-[80px] overflow-y-auto whitespace-pre-wrap p-3 text-sm text-neutral-800 focus:outline-none dark:text-neutral-100"
+                                tabIndex={isPromptSectionDisabled ? -1 : 0}
+                                className={cn(
+                                    "max-h-60 min-h-[80px] overflow-y-auto whitespace-pre-wrap p-3 text-sm text-neutral-800 focus:outline-none dark:text-neutral-100",
+                                    isPromptSectionDisabled &&
+                                    "cursor-not-allowed bg-neutral-50 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500",
+                                )}
                                 onInput={(event) => {
+                                    if (isPromptSectionDisabled) {
+                                        return
+                                    }
                                     setInput(event.currentTarget.textContent ?? "")
                                 }}
                                 onKeyDown={(event) => {
+                                    if (isPromptSectionDisabled) {
+                                        event.preventDefault()
+                                        return
+                                    }
                                     if (event.key === "Enter" && !event.shiftKey) {
                                         event.preventDefault()
                                         submitPrompt()
@@ -549,6 +576,7 @@ export default function Chat() {
                             <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
                                 <Checkbox
                                     checked={isReadOnlyPrompt}
+                                    disabled={isPromptSectionDisabled}
                                     onChange={(event) =>
                                         handleReadOnlyToggle(event.target.checked)
                                     }
@@ -558,7 +586,11 @@ export default function Chat() {
                             <Button
                                 type="submit"
                                 size="sm"
-                                disabled={isInputDisabled || input.trim().length === 0}
+                                disabled={
+                                    isPromptSectionDisabled ||
+                                    isInputDisabled ||
+                                    input.trim().length === 0
+                                }
                             >
                                 Send
                             </Button>
