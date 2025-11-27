@@ -1,61 +1,10 @@
 import {NextResponse} from "next/server";
 import {z} from "zod";
+import {detectDeliveryIntent} from "@/lib/delivery-intent";
 
 const intentSchema = z.object({
     text: z.string().min(1),
 });
-
-const jiraArtifactKeywords = [
-    "jira",
-    "ticket",
-    "tickets",
-    "task",
-    "issue",
-    "story",
-    "bug",
-    "segnalazione",
-];
-
-const persistArtifactKeywords = [
-    "pull request",
-    "pull-request",
-    "pullrequest",
-    "pr ",
-    " pr",
-    "pr.",
-    "pr?",
-    "persistency",
-    "persistency layer",
-    "persistenza",
-    "ai/",
-];
-
-const verbKeywords = [
-    "create",
-    "open",
-    "file",
-    "raise",
-    "log",
-    "draft",
-    "crea",
-    "creare",
-    "creami",
-    "crearlo",
-    "aprimi",
-    "genera",
-    "generami",
-];
-
-const matchesIntent = (text: string, artifactList: string[]) => {
-    const normalized = text.toLowerCase();
-    const mentionsArtifact = artifactList.some((term) =>
-        normalized.includes(term),
-    );
-    if (!mentionsArtifact) {
-        return false;
-    }
-    return verbKeywords.some((verb) => normalized.includes(verb));
-};
 
 export async function POST(request: Request) {
     const body = await request.json().catch(() => null);
@@ -69,9 +18,7 @@ export async function POST(request: Request) {
     }
 
     const {text} = parsed.data;
-
-    const requiresJiraTicket = matchesIntent(text, jiraArtifactKeywords);
-    const requiresPersistPr = matchesIntent(text, persistArtifactKeywords);
+    const {requiresJiraTicket, requiresPersistPr} = detectDeliveryIntent(text);
 
     return NextResponse.json({
         requiresJiraTicket,

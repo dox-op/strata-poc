@@ -139,7 +139,23 @@ export const useSessionManager = ({
                 session,
                 generateMessageId(),
             )
-            setMessagesRef.current?.(() => [contextPayload.message])
+            setMessagesRef.current?.((currentMessages) => {
+                const existingMessages = currentMessages ?? []
+                const contextIndex = existingMessages.findIndex((message) => {
+                    const metadata = (message.metadata ?? {}) as {
+                        source?: string
+                    }
+                    return metadata?.source === "bitbucket-ai-folder"
+                })
+
+                if (contextIndex === -1) {
+                    return [contextPayload.message, ...existingMessages]
+                }
+
+                return existingMessages.map((message, index) =>
+                    index === contextIndex ? contextPayload.message : message,
+                )
+            })
             setSessionContextMetadata(contextPayload.metadata)
             setSessionContextError(null)
             setSessionContextState(contextPayload.state)
@@ -355,7 +371,6 @@ export const useSessionManager = ({
         setSessionContextState("loading")
         setSessionContextError(null)
         setSessionContextMetadata(null)
-        clearConversation()
 
         void loadSessionDetails(selectedSessionId)
     }, [
@@ -364,7 +379,6 @@ export const useSessionManager = ({
         activeSession,
         selectedProject,
         selectedBranch,
-        clearConversation,
         loadSessionDetails,
     ])
 

@@ -37,7 +37,40 @@ export default function Chat() {
     const [writeModeSettings, setWriteModeSettings] = useState<Record<string, boolean>>({})
     const [jiraRequestHistory, setJiraRequestHistory] = useState<Record<string, boolean>>({})
     const [persistRequestHistory, setPersistRequestHistory] = useState<Record<string, boolean>>({})
+    const [deliveryIntentLog, setDeliveryIntentLog] = useState<
+        Array<{
+            id: string
+            preview: string
+            requiresJiraTicket: boolean
+            requiresPersistPr: boolean
+        }>
+    >([])
     const [isJiraTaskRecording, setIsJiraTaskRecording] = useState(false)
+
+    const {
+        activeSession,
+        fetchSessions,
+        handlePersistAction,
+        recordJiraTask,
+        handleSessionSelect,
+        isNewSessionSelection,
+        persistActionDisabled,
+        persistButtonState,
+        persistHelperText,
+        selectedBranch,
+        selectedProject,
+        sessionContextError,
+        sessionContextMetadata,
+        sessionContextState,
+        sessionOptions,
+        setBitbucketStatus,
+        setSelectedBranch,
+        setSelectedProject,
+        selectedSessionId,
+        refreshPersistState,
+        isSessionCreationPending,
+    } = useSessionManager({setMessagesRef})
+
     const detectDeliveryIntent = useCallback(
         async (prompt: string) => {
             if (!activeSession || prompt.trim().length === 0) {
@@ -72,36 +105,20 @@ export default function Chat() {
                         return {...prev, [activeSession.id]: true}
                     })
                 }
+                const logEntry = {
+                    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    preview:
+                        prompt.length > 80 ? `${prompt.slice(0, 77).trim()}…` : prompt.trim(),
+                    requiresJiraTicket: Boolean(data.requiresJiraTicket),
+                    requiresPersistPr: Boolean(data.requiresPersistPr),
+                }
+                setDeliveryIntentLog((prev) => [logEntry, ...prev].slice(0, 5))
             } catch (error) {
                 console.error("Failed to detect delivery intent", error)
             }
         },
         [activeSession],
     )
-
-    const {
-        activeSession,
-        fetchSessions,
-        handlePersistAction,
-        recordJiraTask,
-        handleSessionSelect,
-        isNewSessionSelection,
-        persistActionDisabled,
-        persistButtonState,
-        persistHelperText,
-        selectedBranch,
-        selectedProject,
-        sessionContextError,
-        sessionContextMetadata,
-        sessionContextState,
-        sessionOptions,
-        setBitbucketStatus,
-        setSelectedBranch,
-        setSelectedProject,
-        selectedSessionId,
-        refreshPersistState,
-        isSessionCreationPending,
-    } = useSessionManager({setMessagesRef})
 
     const {messages, status, sendMessage, setMessages} = useChat({
         id: activeSession?.id,
@@ -125,6 +142,10 @@ export default function Chat() {
             setInput("")
         }
     }, [activeSession])
+
+    useEffect(() => {
+        setDeliveryIntentLog([])
+    }, [activeSession?.id])
 
     useEffect(() => {
         if (!activeSession) {
@@ -403,6 +424,51 @@ export default function Chat() {
 
                 <div
                     className="flex flex-col space-y-4 rounded-lg border border-neutral-200 bg-white/80 p-4 dark:border-neutral-700 dark:bg-neutral-900/60">
+                    {deliveryIntentLog.length > 0 && (
+                        <div
+                            className="rounded-lg border border-dashed border-neutral-200 bg-white p-3 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+                            <p className="text-[11px] uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                Delivery intent (last {deliveryIntentLog.length})
+                            </p>
+                            <div className="mt-2 space-y-2">
+                                {deliveryIntentLog.map((entry) => (
+                                    <div
+                                        key={entry.id}
+                                        className="rounded border border-neutral-100 bg-neutral-50 p-2 dark:border-neutral-800 dark:bg-neutral-900/40"
+                                    >
+                                        <p className="font-medium text-neutral-700 dark:text-neutral-100">
+                                            {entry.preview.length > 0
+                                                ? entry.preview
+                                                : "(empty prompt)"}
+                                        </p>
+                                        <p>
+                                            Jira:{" "}
+                                            <span
+                                                className={
+                                                    entry.requiresJiraTicket
+                                                        ? "text-green-600 dark:text-green-400"
+                                                        : "text-neutral-500"
+                                                }
+                                            >
+                                                {entry.requiresJiraTicket ? "yes" : "no"}
+                                            </span>{" "}
+                                            · Persist:{" "}
+                                            <span
+                                                className={
+                                                    entry.requiresPersistPr
+                                                        ? "text-green-600 dark:text-green-400"
+                                                        : "text-neutral-500"
+                                                }
+                                            >
+                                                {entry.requiresPersistPr ? "yes" : "no"}
+                                            </span>
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {showDeliveryCard && (
                         <div
                             className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">

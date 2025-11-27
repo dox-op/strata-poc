@@ -2,25 +2,34 @@
 
 ## Mission
 
-Strata transforms the persistency layer into a living, conversational knowledge base that replaces static documentation.
-The chatbot (“Strata”) orchestrates creation, validation, and distribution of `.mdc` knowledge for every feature.
+Strata rende la documentazione organica, sfruttando l'antropomorfismo del chatbot: leggere, studiare e scrivere
+diventa un dialogo continuo con lo strato di persistenza (`ai/` + `.mdc`). È uno strumento unico per funzionali,
+developer e clienti per esplorare il contenuto di un branch, interrogare il layer e aggiornarlo tramite PR o Jira task.
+
+## Value Proposition
+
+- Centralità assoluta del persistency layer: ogni sessione gira attorno alla conoscenza salvata in `ai/`.
+- Massimizza il valore dello sforzo già sostenuto: niente più documentazione statica da creare/distruggere.
+- L'esperienza conversazionale abbassa il costo di onboarding e garantisce insight coerenti per tutti gli stakeholder.
 
 ## Personas
 
-- **Functional Leads** – capture requirements, refine tasks within Strata, author Jira issues, and open
-  persistency-layer PRs.
-- **Developers** – consume tasks, ensure the layer is updated in their first commit, and adjust inherited knowledge.
-- **Clients** – benefit from consistently curated outputs and up-to-date insights.
+- **Funzionali** – raccolgono i requisiti con strumenti esterni (Teams, Read.ai, ChatGPT…), li rifiniscono in Strata e
+  trasformano le conversazioni in task persistiti (Jira + PR).
+- **Developer** – consumano task dalla board, aggiornano lo strato di persistenza al primo commit e adattano il
+  knowledge esistente quando servono correzioni.
+- **Clienti** – accedono a output coerenti perché il layer è sempre aggiornato e tracciato.
 
-## Core Workflow (Single Feature)
+## Demo Workflow (single feature)
 
-1. Capture requirement via external tooling (Teams, Read.ai, ChatGPT).
-2. Refine and validate inside a Strata session; consult relevant `.mdc` files.
-3. Create Jira task (future automation) once scope is stable.
-4. Persist requirement + chain of thought by opening/refreshing a dedicated PR (future automation for branch/PR
-   creation).
-5. Developers implement the feature with the updated layer, adapting any preloaded knowledge.
-6. After merge, new sessions inherit the updated context automatically.
+1. Il funzionale raccoglie il requisito con i tool esterni preferiti.
+2. Convalida e perfeziona il task in Strata accedendo al branch del progetto (automazione futura).
+3. Una volta validato, crea il task in Jira e persiste il contenuto/chain of thought creando la PR (nuovo branch da
+   automatizzare).
+4. Il developer prende il task dalla board, assicura che il persistency layer sia aggiornato al primo commit e
+   implementa.
+5. Se necessario aggiorna lo strato di persistenza ereditato nei progetti brownfield.
+6. Dopo il merge, le sessioni successive ricevono automaticamente lo strato aggiornato.
 
 ## Automation Backlog
 
