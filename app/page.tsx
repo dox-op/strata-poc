@@ -2,17 +2,17 @@
 
 import {Button} from "@/components/ui/button"
 import {Checkbox} from "@/components/ui/checkbox"
-import {type UIMessage, useChat} from "@ai-sdk/react"
+import {getToolName, isToolUIPart, type UIMessage} from "ai"
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react"
 import {AnimatePresence, motion} from "framer-motion"
 import {toast} from "sonner"
-import {getToolName, isToolUIPart} from "ai"
 
 import ProjectOverview from "@/components/project-overview"
 import {SessionSelection} from "@/components/chat/session-selection"
 import {SessionContextStatus} from "@/components/chat/session-context-status"
 import {AssistantMessage} from "@/components/chat/assistant-message"
 import {LoadingIndicator} from "@/components/chat/loading-indicator"
+import {useCodexChat} from "@/hooks/use-codex-chat"
 import {useSessionManager} from "@/hooks/use-session-manager"
 import {cn} from "@/lib/utils"
 
@@ -120,7 +120,7 @@ export default function Chat() {
         [activeSession],
     )
 
-    const {messages, status, sendMessage, setMessages} = useChat({
+    const {messages, status, sendMessage, setMessages} = useCodexChat({
         id: activeSession?.id,
         onToolCall({toolCall}) {
             console.log("Tool call:", toolCall)

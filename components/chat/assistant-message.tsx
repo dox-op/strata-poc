@@ -1,7 +1,7 @@
 "use client"
 
 import {AnimatePresence, motion} from "framer-motion"
-import type {UIMessage} from "@ai-sdk/react"
+import type {UIMessage} from "ai"
 import ReactMarkdown, {type Options} from "react-markdown"
 import React from "react"
 

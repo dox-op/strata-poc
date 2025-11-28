@@ -4,7 +4,7 @@ This folder captures architecture, operations, and decision records for Strata.
 
 ## Initial Topics
 
-- Session architecture (Next.js API routes, `useChat`, Bitbucket OAuth).
+- Session architecture (Next.js API routes, `useCodexChat`, Bitbucket OAuth).
 - Persistency layer tooling (write mode flag, PR creation endpoint).
 - Future automation stack (Jira integration, codebase hydration service).
 

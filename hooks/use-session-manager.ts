@@ -1,5 +1,5 @@
 import {type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState,} from "react"
-import type {UIMessage} from "@ai-sdk/react"
+import type {UIMessage} from "ai"
 import {toast} from "sonner"
 
 import type {BitbucketProject} from "@/components/bitbucket-project-picker"
