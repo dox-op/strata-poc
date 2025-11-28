@@ -1,4 +1,4 @@
-import type {UIMessage} from "@ai-sdk/react"
+import type {UIMessage} from "ai"
 
 import type {SessionContextMetadata, SessionContextState, SessionDetails, SessionSummary,} from "./types"
 

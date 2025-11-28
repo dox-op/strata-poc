@@ -1,14 +1,37 @@
-import {embed, embedMany} from "ai";
+import {codexJsonRequest} from "@/lib/codex/client";
+import {env} from "@/lib/env.mjs";
 import {cosineDistance, desc, gt, sql} from "drizzle-orm";
 import {embeddings as embeddingsTable} from "../db/schema/embeddings";
 import {db} from "../db";
 
-const embeddingModel = "openai/text-embedding-ada-002";
+const EMBEDDING_MODEL = env.CODEX_EMBEDDING_MODEL ?? "text-embedding-3-small";
 
 const CONTEXT_CHUNK_SIZE = 1_500;
 const MAX_CONTEXT_CHUNKS = 120;
 const MIN_CONTEXT_SIMILARITY = 0.25;
 const DEFAULT_RESULT_LIMIT = 6;
+
+type EmbeddingAPIResponse = {
+    data: Array<{
+        embedding: number[];
+    }>;
+};
+
+const fetchEmbeddings = async (values: string[]): Promise<number[][]> => {
+    if (values.length === 0) {
+        return [];
+    }
+
+    const response = await codexJsonRequest<EmbeddingAPIResponse>({
+        path: "/embeddings",
+        body: {
+            model: EMBEDDING_MODEL,
+            input: values,
+        },
+    });
+
+    return response.data.map((entry) => entry.embedding);
+};
 
 const normalizeWhitespace = (input: string) =>
     input.replace(/\s+/g, " ").trim();
@@ -108,16 +131,13 @@ const buildContextMatches = async (
         return [] as RetrievalResult[];
     }
 
-    const {embeddings} = await embedMany({
-        model: embeddingModel,
-        values: chunks.map((chunk) => chunk.content),
-    });
+    const embeddings = await fetchEmbeddings(chunks.map((chunk) => chunk.content));
 
     return chunks
         .map<RetrievalResult>((chunk, index) => {
             const similarityScore = cosineSimilarity(
                 queryEmbedding,
-                embeddings[index],
+                embeddings[index] ?? [],
             );
             return {
                 name: chunk.label,
@@ -140,10 +160,7 @@ export const generateEmbeddings = async (
     if (sentences.length === 0) {
         return [];
     }
-    const {embeddings} = await embedMany({
-        model: embeddingModel,
-        values: sentences,
-    });
+    const embeddings = await fetchEmbeddings(sentences);
     return embeddings.map((embedding, index) => ({
         content: sentences[index] ?? "",
         embedding,
@@ -152,11 +169,8 @@ export const generateEmbeddings = async (
 
 export const generateEmbedding = async (value: string): Promise<number[]> => {
     const normalized = normalizeWhitespace(value);
-    const {embedding} = await embed({
-        model: embeddingModel,
-        value: normalized,
-    });
-    return embedding;
+    const [embedding] = await fetchEmbeddings([normalized]);
+    return embedding ?? [];
 };
 
 export type RetrievalContextBlock = {
