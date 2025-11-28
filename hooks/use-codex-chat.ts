@@ -1,7 +1,14 @@
 "use client"
 
 import {useCallback, useEffect, useRef, useSyncExternalStore} from "react"
-import {AbstractChat, type ChatInit, type ChatState, type ChatStatus, type UIMessage,} from "ai"
+import {
+    AbstractChat,
+    type ChatInit,
+    type ChatState,
+    type ChatStatus,
+    type HttpChatTransportInitOptions,
+    type UIMessage,
+} from "ai"
 
 const maybeStructuredClone = <T, >(value: T): T => {
     if (typeof structuredClone === "function") {
@@ -130,7 +137,9 @@ class ReactChatState<UI_MESSAGE extends UIMessage> implements ChatState<UI_MESSA
 class CodexChat<UI_MESSAGE extends UIMessage> extends AbstractChat<UI_MESSAGE> {
     private reactState: ReactChatState<UI_MESSAGE>
 
-    constructor({messages = [], ...init}: ChatInit<UI_MESSAGE> = {}) {
+    constructor({messages = [], ...init}: ChatInit<UI_MESSAGE> & {
+        transport?: HttpChatTransportInitOptions<UI_MESSAGE>["transport"]
+    } = {}) {
         const state = new ReactChatState(messages)
         super({state, ...init})
         this.reactState = state

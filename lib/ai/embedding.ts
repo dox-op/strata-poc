@@ -23,7 +23,7 @@ const fetchEmbeddings = async (values: string[]): Promise<number[][]> => {
     }
 
     const response = await codexJsonRequest<EmbeddingAPIResponse>({
-        path: "/embeddings",
+        path: "embeddings",
         body: {
             model: EMBEDDING_MODEL,
             input: values,

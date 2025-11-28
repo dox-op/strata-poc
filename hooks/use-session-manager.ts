@@ -539,62 +539,67 @@ export const useSessionManager = ({
         [],
     )
 
-    const handlePersistAction = useCallback(async () => {
-        if (selectedSessionId === NEW_SESSION_OPTION || !activeSession) {
-            return
-        }
-
-        const hasPending = activeSession.persist.hasPendingChanges
-        const existingPr = activeSession.persist.pr
-
-        if (!hasPending && existingPr?.url) {
-            window.open(existingPr.url, "_blank", "noreferrer")
-            return
-        }
-
-        if (!hasPending) {
-            toast.error("No persistency layer changes are pending for this session.")
-            return
-        }
-
-        setIsPersistActionPending(true)
-        try {
-            const response = await fetch(
-                `/api/sessions/${activeSession.id}/persist`,
-                {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({}),
-                },
-            )
-
-            if (!response.ok) {
-                const error = (await response.json().catch(() => null)) as {
-                    error?: string
-                } | null
-                throw new Error(error?.error ?? "persist_failed")
+    const handlePersistAction = useCallback(
+        async (options?: { title?: string | null }) => {
+            if (selectedSessionId === NEW_SESSION_OPTION || !activeSession) {
+                return
             }
 
-            await loadSessionDetails(activeSession.id)
+            const hasPending = activeSession.persist.hasPendingChanges
+            const existingPr = activeSession.persist.pr
 
-            if (existingPr) {
-                toast.success(
-                    "Updated the pull request with the latest persistency layer changes.",
-                )
-            } else {
-                toast.success(
-                    "Created a pull request for the persistency layer changes.",
-                )
+            if (!hasPending && existingPr?.url) {
+                window.open(existingPr.url, "_blank", "noreferrer")
+                return
             }
-        } catch (error) {
-            console.error("Failed to sync persistency layer changes", error)
-            toast.error(
-                "Unable to sync persistency layer changes with Bitbucket. Please try again.",
-            )
-        } finally {
-            setIsPersistActionPending(false)
-        }
-    }, [activeSession, selectedSessionId, loadSessionDetails])
+
+            if (!hasPending) {
+                toast.error("No persistency layer changes are pending for this session.")
+                return
+            }
+
+            setIsPersistActionPending(true)
+            try {
+                const response = await fetch(
+                    `/api/sessions/${activeSession.id}/persist`,
+                    {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({
+                            title: options?.title ?? null,
+                        }),
+                    },
+                )
+
+                if (!response.ok) {
+                    const error = (await response.json().catch(() => null)) as {
+                        error?: string
+                    } | null
+                    throw new Error(error?.error ?? "persist_failed")
+                }
+
+                await loadSessionDetails(activeSession.id)
+
+                if (existingPr) {
+                    toast.success(
+                        "Updated the pull request with the latest persistency layer changes.",
+                    )
+                } else {
+                    toast.success(
+                        "Created a pull request for the persistency layer changes.",
+                    )
+                }
+            } catch (error) {
+                console.error("Failed to sync persistency layer changes", error)
+                toast.error(
+                    "Unable to sync persistency layer changes with Bitbucket. Please try again.",
+                )
+            } finally {
+                setIsPersistActionPending(false)
+            }
+        },
+        [activeSession, selectedSessionId, loadSessionDetails],
+    )
 
     return {
         activeSession,

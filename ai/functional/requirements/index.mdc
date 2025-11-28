@@ -5,5 +5,7 @@ Use this folder for cross-cutting lifecycle and UI requirements. Suggested topic
 - Session lifecycle (creation, write mode, PR status button).
 - Prompt UX and accessibility.
 - Persistency layer governance (per-prompt write mode, summaries, indexing rules).
+- [Persistency Layer Guardrail](./persistency-layer.mdc) — documents the rule that only the root `ai/` directory is
+  readable/writable for Strata sessions and PR automation.
 
 Link each detailed `.mdc` here so stakeholders can navigate requirements quickly.

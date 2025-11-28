@@ -1,8 +1,11 @@
 import {env} from "@/lib/env.mjs";
 
-const DEFAULT_CODEX_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_CODEX_BASE_URL = "https://api.openai.com/v1/";
 
-const resolveBaseUrl = () => env.CODEX_BASE_URL ?? DEFAULT_CODEX_BASE_URL;
+const resolveBaseUrl = () => {
+    const baseUrl = env.CODEX_BASE_URL ?? DEFAULT_CODEX_BASE_URL;
+    return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+};
 
 const getApiKey = () => {
     const apiKey = env.CODEX_API_KEY ?? process.env.CODEX_API_KEY;
@@ -54,10 +57,6 @@ const performCodexFetch = async ({
         "Content-Type": "application/json",
         ...headers,
     };
-
-    if (env.CODEX_ORG_ID) {
-        mergedHeaders["OpenAI-Organization"] = env.CODEX_ORG_ID;
-    }
 
     const serializedBody =
         body === undefined || body === null

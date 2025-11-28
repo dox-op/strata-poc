@@ -1,0 +1,22 @@
+# Persistency Layer Guardrail — ai/ Folder Only
+
+## Rule
+
+Every Strata session must treat the project’s `ai/` directory (rooted at the selected branch) as the single source of
+truth for knowledge persistence. No other folder (e.g., `files/ai/…`, temp directories, or external paths) is valid for
+reads or writes.
+
+## Implications
+
+1. **Context loading** – When sessions hydrate, they must inspect only `<branch>/ai/`. If `ai/` is missing, the session
+   is read-only until that directory is created.
+2. **Write operations** – Tool calls such as `writeAiFile` must resolve to paths like `ai/<topic>/<file>.mdc`. Reject
+   any
+   attempt to write outside `ai/` (including prefixes like `files/ai/…`) to avoid polluting the repo.
+3. **PR creation** – Persist workflows will commit exactly the queued `ai/` files; Bitbucket uploads must target the
+   canonical `ai/…` paths so reviewers see changes in the expected directory tree.
+4. **Telemetry & validation** – Delivery intent logs should only mark `Persist: yes` when a valid `ai/` path is queued,
+   ensuring UI actions (Create/Update PR) match the real draft state.
+
+Keep this requirement synchronized with technical implementations (chat tools, persist routes) so that knowledge never
+escapes the `ai/` namespace.

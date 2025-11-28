@@ -10,10 +10,69 @@ import {
     withAuthHeader,
 } from "@/lib/bitbucket/client";
 import {ensureFreshSession, readBitbucketSession} from "@/app/api/sessions/utils";
+import {normalizeAiFilePath} from "@/lib/ai/file-path";
 
 const encode = (value: string) => encodeURIComponent(value);
 
 type RouteParams = { id?: string };
+type SessionAiDraftRow = typeof sessionAiDrafts.$inferSelect;
+
+const MAX_PR_TITLE_LENGTH = 140;
+
+const truncateTitle = (value: string) =>
+    value.length > MAX_PR_TITLE_LENGTH ? `${value.slice(0, MAX_PR_TITLE_LENGTH - 1).trimEnd()}…` : value;
+
+const deriveConversationSummaryTitle = (drafts: SessionAiDraftRow[]) => {
+    const summaryParts = drafts
+        .map((draft) => (draft.summary ?? "").replace(/\s+/g, " ").trim())
+        .filter((entry) => entry.length > 0);
+
+    if (summaryParts.length > 0) {
+        const uniqueSummaries = Array.from(new Set(summaryParts));
+        return truncateTitle(uniqueSummaries.slice(0, 3).join(" · "));
+    }
+
+    const pathHints: string[] = [];
+    for (const draft of drafts) {
+        const rawPath = typeof draft.path === "string" ? draft.path : "";
+        if (!rawPath) {
+            continue;
+        }
+
+        let normalizedPath = rawPath;
+        try {
+            normalizedPath = normalizeAiFilePath(rawPath);
+        } catch {
+            // If normalization fails, fall back to the original path without blocking.
+        }
+
+        const segments = normalizedPath.split("/");
+        const fileName = segments[segments.length - 1] ?? normalizedPath;
+        if (!fileName) {
+            continue;
+        }
+
+        const label = fileName.replace(/\.mdc$/i, "").trim();
+        if (label.length === 0 || pathHints.includes(label)) {
+            continue;
+        }
+
+        pathHints.push(label);
+        if (pathHints.length >= 3) {
+            break;
+        }
+    }
+
+    if (pathHints.length > 0) {
+        const joined =
+            pathHints.length === 1
+                ? `Strata updates for ${pathHints[0]}`
+                : `Strata updates for ${pathHints.join(", ")}`;
+        return truncateTitle(joined);
+    }
+
+    return null;
+};
 
 export async function GET(
     _request: NextRequest,
@@ -87,6 +146,13 @@ export async function POST(
     const sessionId = (await params).id;
     if (!sessionId) {
         return NextResponse.json({error: "session_id_required"}, {status: 400});
+    }
+
+    let persistPayload: { title?: string | null } | null = null;
+    try {
+        persistPayload = (await request.json()) as { title?: string | null };
+    } catch {
+        persistPayload = null;
     }
 
     const [session] = await db
@@ -200,19 +266,50 @@ export async function POST(
         }
     }
 
+    const fallbackTitle = `Update persistency layer via session ${
+        session.label ?? session.id
+    }`;
+    const conversationSummaryTitle = deriveConversationSummaryTitle(drafts);
+
+    const normalizedRequestedTitle =
+        typeof persistPayload?.title === "string"
+            ? persistPayload.title.replace(/\s+/g, " ").trim()
+            : "";
+    const existingTitle =
+        typeof session.persistPrTitle === "string"
+            ? session.persistPrTitle.trim()
+            : "";
+    const desiredTitle =
+        normalizedRequestedTitle.length > 0
+            ? normalizedRequestedTitle
+            : existingTitle.length > 0
+                ? existingTitle
+                : conversationSummaryTitle ?? fallbackTitle;
+
     const formData = new FormData();
     formData.append(
         "message",
-        session.persistPrTitle ??
-        `Update persistency layer via session ${session.label ?? session.id}`,
+        desiredTitle,
     );
     formData.append("branch", featureBranch);
 
-    drafts.forEach((draft) => {
+    let normalizedDrafts: Array<typeof drafts[number] & { safePath: string }>;
+    try {
+        normalizedDrafts = drafts.map((draft) => ({
+            ...draft,
+            safePath: normalizeAiFilePath(draft.path),
+        }));
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : "ai_path_out_of_scope";
+        return NextResponse.json({error: message}, {status: 400});
+    }
+
+    normalizedDrafts.forEach((draft) => {
         formData.append(
-            `files/${draft.path}`,
+            `${draft.safePath}`,
             new Blob([draft.content], {type: "text/plain"}),
-            draft.path.split("/").pop() ?? "ai.mdc",
+            draft.safePath.split("/").pop() ?? "ai.mdc",
         );
     });
 
@@ -225,6 +322,7 @@ export async function POST(
             featureBranch,
             destinationBranch,
             draftCount: drafts.length,
+            normalizedDrafts
         }),
     );
 
@@ -252,9 +350,7 @@ export async function POST(
 
     let prId = session.persistPrId ?? null;
     let prUrl = session.persistPrUrl ?? null;
-    let prTitle =
-        session.persistPrTitle ??
-        `AI session updates - ${session.projectName} · ${session.branchName}`;
+    let prTitle = desiredTitle;
 
     if (!session.persistPrId) {
         const prResponse = await fetch(
@@ -294,6 +390,33 @@ export async function POST(
 
         prId = prJson.id ? String(prJson.id) : null;
         prUrl = prJson.links?.html?.href ?? null;
+    } else if (
+        session.persistPrId &&
+        desiredTitle.length > 0 &&
+        desiredTitle !== (session.persistPrTitle ?? "")
+    ) {
+        const updateResponse = await fetch(
+            `https://api.bitbucket.org/2.0/repositories/${encode(workspace)}/${encode(
+                repository,
+            )}/pullrequests/${encode(session.persistPrId)}`,
+            {
+                method: "PUT",
+                headers: {
+                    ...withAuthHeader(bitbucketSession.accessToken),
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    title: desiredTitle,
+                }),
+            },
+        );
+
+        if (!updateResponse.ok) {
+            return NextResponse.json(
+                {error: "bitbucket_pr_update_failed"},
+                {status: 500},
+            );
+        }
     }
 
     const updatedPaths = drafts.map((draft) => draft.path);

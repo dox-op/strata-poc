@@ -12,9 +12,17 @@ import {and, eq} from "drizzle-orm";
 import {mapSessionDetails} from "@/app/api/sessions/mapper";
 import {buildSessionContextPayload, generateMessageId} from "@/lib/session/utils";
 import {detectDeliveryIntent} from "@/lib/delivery-intent";
+import {normalizeAiFilePath} from "@/lib/ai/file-path";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
+
+const STRATA_IDENTITY_RULES = `
+Strata Identity & Personas:
+- You are Strata (Codex undercover) per ai/ai-bootstrap.mdc: an AI assistant embedded in the persistency workflow that keeps '.mdc' files authoritative and fully in English, loads ai-meta best practices before editing, and synchronizes summaries whenever knowledge changes.
+- Serve three personas drawn from ai/ai-bootstrap.mdc and ai/functional/summary.mdc: Functional Leads (capture, refine, persist requirements), Developers (consume tasks, update the persistency layer on first commit, adapt inherited knowledge), and Clients (consume curated outputs). Tailor tone, depth, and next actions to whichever persona is implied in the prompt; ask for clarification if unclear.
+- Treat the persistency layer as the source of truth for sensitive product knowledge. Only surface the minimum necessary excerpts, avoid leaking branch-specific details outside the question’s scope, and remind users that updates happen through Strata’s guarded workflows (Jira + persistency PRs) when privacy concerns arise.
+`;
 
 const PERSISTENCY_LAYER_BASIC_RULES = `
 Strata taxonomy baseline:
@@ -26,11 +34,10 @@ Strata taxonomy baseline:
 
 const PERSISTENCY_LAYER_RULES = `
 ${PERSISTENCY_LAYER_BASIC_RULES}
-
 Persistency layer guardrails (apply even if some files are missing for the current branch):
-- The persistency layer is a human-legible knowledge base made of .mdc files inside the ai/ directory.
-- ai/ai-bootstrap.mdc explains how the layer is organised. Treat it as mandatory and consult it before touching other folders.
-- All .mdc files must be written entirely in English; do not mix languages when updating or creating documents.
+— The persistency layer is a human-legible knowledge base made of .mdc files inside the ai/ directory.
+— ai/ai-bootstrap.mdc explains how the layer is organised. Treat it as mandatory and consult it before touching other folders.
+— All .mdc files must be written entirely in English; do not mix languages when updating or creating documents.
 - ai/ai-meta/ contains agent playbooks, prompts, and best-practice catalogues (ai/ai-meta/best-practices/ expands the catalogue; migration-brief.mdc is optional per project).
 - ai/technical/ holds architecture, operations, and decision records; ai/functional/ holds functional intent, workflows, and glossaries. All of these folders, and any nested topic folder under them, must maintain an index.mdc that summarises the folder contents and structure.
 - When you create a new topic folder under ai/, immediately create an index.mdc within it so humans/agents can navigate the area, and update the parent folder index (and any summaries referencing it) so the new topic is discoverable.
@@ -38,7 +45,7 @@ Persistency layer guardrails (apply even if some files are missing for the curre
 - Keep ai/functional/summary.mdc aligned whenever you add or change documents in ai/functional/acceptance, integrations, requirements, or taxonomy.
 - Never add manual change logs to .mdc files; overwrite content so it always reflects the current truth and rely on Git history for diffs.
 - Always reference only the ai/ directory (persistency layer). If a required summary/index file is missing, call it out and recommend adding it to restore navigability.
-- Jira tickets must describe how the persistency layer is updated with the same guardrails above (update existing files first, only create new topics when necessary, and keep indexes in sync). Once Jira assigns the key (e.g., ABC-123), create a branch named `<KEY>` and ensure the first commit carries the queued persistency-layer changes before any implementation work.
+- Jira tickets must describe how the persistency layer is updated with the same guardrails above (update existing files first, only create new topics when necessary, and keep indexes in sync). Once Jira assigns the key (e.g., ABC-123), create a branch named '<KEY>' and ensure the first commit carries the queued persistency-layer changes before any implementation work.
 `;
 
 const DEFAULT_CODEX_BASE_URL = "https://api.openai.com/v1";
@@ -51,7 +58,6 @@ const getCodexProvider = () => {
     return createOpenAI({
         apiKey,
         baseURL: env.CODEX_BASE_URL ?? DEFAULT_CODEX_BASE_URL,
-        organization: env.CODEX_ORG_ID,
     });
 };
 
@@ -222,23 +228,6 @@ const mergeContextBlocks = (
     return Array.from(merged.values());
 };
 
-const sanitizeAiFilePath = (path: string) => {
-    if (!path || typeof path !== "string") {
-        throw new Error("invalid_ai_path");
-    }
-    const normalized = path.trim().replace(/^\/+/, "");
-    if (!normalized.toLowerCase().startsWith("ai/")) {
-        throw new Error("ai_path_out_of_scope");
-    }
-    if (!normalized.toLowerCase().endsWith(".mdc")) {
-        throw new Error("ai_path_extension_required");
-    }
-    if (normalized.includes("..")) {
-        throw new Error("ai_path_out_of_scope");
-    }
-    return normalized;
-};
-
 const upsertAiDraft = async ({
                                  sessionId,
                                  path,
@@ -252,7 +241,7 @@ const upsertAiDraft = async ({
     summary?: string | null;
     currentDraftCount: number;
 }) => {
-    const normalizedPath = sanitizeAiFilePath(path);
+    const normalizedPath = normalizeAiFilePath(path);
     const now = new Date();
 
     const [existing] = await db
@@ -382,11 +371,60 @@ export async function POST(req: Request) {
 
     const sessionContextBlocks = buildSessionContextBlocks(sessionRecord);
     const messagesWithContext = [persistencyContextMessage, ...sanitizedMessages];
-    const bitbucketContextBlocks = extractBitbucketContextBlocks(messagesWithContext);
-    const combinedContextBlocks = mergeContextBlocks(
+    let bitbucketContextBlocks = extractBitbucketContextBlocks(messagesWithContext);
+    let combinedContextBlocks = mergeContextBlocks(
         sessionContextBlocks,
         bitbucketContextBlocks,
     );
+
+    let retrievedContextMessage: UIMessage | null = null;
+    if (lastUserText && lastUserText.trim().length > 0) {
+        const retrieved = await findRelevantContent(lastUserText, {
+            contextBlocks: combinedContextBlocks,
+            limit: 6,
+        });
+        if (retrieved.length > 0) {
+            const formatted = retrieved
+                .map((result) => {
+                    const preview =
+                        (result.metadata?.preview as string | undefined) ??
+                        (result.metadata?.content as string | undefined) ??
+                        "";
+                    return `### ${result.name}\nRelevance: ${(result.similarity ?? 0).toFixed(2)}\n${preview}`;
+                })
+                .join("\n\n");
+
+            retrievedContextMessage = {
+                id: generateMessageId(),
+                role: "user",
+                parts: [
+                    {
+                        type: "text",
+                        text: `# Retrieved Knowledge\n${formatted}`,
+                    },
+                ],
+                metadata: {
+                    source: "bitbucket-ai-folder",
+                    retrievedAt: new Date().toISOString(),
+                },
+            } satisfies UIMessage;
+        }
+    }
+
+    if (retrievedContextMessage) {
+        messagesWithContext.splice(1, 0, retrievedContextMessage);
+    }
+    const persistencyContextText = persistencyContextMessage.parts
+        .filter((part) => part.type === "text" && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("\n\n");
+    if (retrievedContextMessage) {
+        bitbucketContextBlocks = extractBitbucketContextBlocks(messagesWithContext);
+        combinedContextBlocks = mergeContextBlocks(
+            sessionContextBlocks,
+            bitbucketContextBlocks,
+        );
+    }
 
     const persistenceGuidance = writeModeEnabled
         ? deliveryIntent.requiresPersistPr
@@ -401,6 +439,7 @@ export async function POST(req: Request) {
         messages: convertToModelMessages(messagesWithContext),
         system: `You are a helpful assistant acting as the users' second brain.
     Prioritise using the available tools on every request. If the user shares all necessary details in their prompt, you may answer directly but still call tools when a question requires stored knowledge, additional validation, or persistency updates.
+    ${STRATA_IDENTITY_RULES}
     Never enter a clarification loop: ask at most one follow-up question per user turn. If the user does not provide the missing information after that, respond with, "Sorry, I don't know."
     Be sure to getInformation from your knowledge base before answering any questions that rely on stored context.
     If the user presents information about themselves, use the addResource tool to store it.
@@ -416,6 +455,9 @@ export async function POST(req: Request) {
     Use your abilities as a reasoning machine to answer questions based on the information you do have and what the user explicitly tells you.
     ${PERSISTENCY_LAYER_RULES}
     ${persistenceGuidance}
+
+    Persistency Context:
+    ${persistencyContextText}
 `,
         stopWhen: stepCountIs(5),
         tools: {
