@@ -1,3 +1,6 @@
+> **Note:** This document is part of the persistency layer. For a high-level overview, see the
+> project [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md).
+
 # AI Meta Index
 
 This directory hosts Strata's operating guardrails.

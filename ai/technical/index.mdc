@@ -1,3 +1,6 @@
+> **Note:** This document is part of the persistency layer. For a high-level overview, see the
+> project [README.md](../../README.md) and [AGENTS.md](../../AGENTS.md).
+
 # Technical Index
 
 This folder captures architecture, operations, and decision records for Strata.
