@@ -1,15 +1,31 @@
-# AI SDK RAG Template
+# Strata: A Living Knowledge Base PoC
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fnicoalbanese%2Fai-sdk-rag-template&env=OPENAI_API_KEY&envDescription=You%20will%20need%20an%20OPENAI%20API%20Key.&project-name=ai-sdk-rag&repository-name=ai-sdk-rag&stores=%5B%7B%22type%22%3A%22postgres%22%7D%5D&skippable-integrations=1)
+Strata is a proof-of-concept project that transforms product documentation into a living, conversational knowledge base.
+It does this by establishing a "persistency layer" managed by an AI agent.
 
-A [Next.js](https://nextjs.org/) application, powered by the Vercel AI SDK, that uses retrieval-augmented generation (RAG) to reason and respond with information outside of the model's training data.
+## The Persistency Layer
 
-## Features
+The core of this project is the **persistency layer**, which is the `ai/` directory. This folder is the single source of
+truth for all product knowledge, including:
 
-- Information retrieval and addition through tool calls using the [`streamText`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text) function
-- Real-time streaming of model responses to the frontend using the custom `useCodexChat` hook
-- Vector embedding storage with [DrizzleORM](https://orm.drizzle.team/) and [PostgreSQL](https://www.postgresql.org/)
-- Animated UI with [Framer Motion](https://www.framer.com/motion/)
+- Functional requirements
+- Technical architecture
+- AI agent behavior and identity
+
+This approach replaces static documentation with a dynamic, version-controlled knowledge base that evolves alongside the
+codebase.
+
+For a detailed breakdown of the directory structure, see the [Directory Map in `AGENTS.md`](AGENTS.md#directory-map).
+The rules governing this layer are defined in [
+`ai/functional/requirements/persistency-layer.mdc`](ai/functional/requirements/persistency-layer.mdc).
+
+## The Strata Agent
+
+The project features an AI assistant named Strata, which is responsible for managing the persistency layer. Developers
+and other stakeholders interact with the agent to query, update, and maintain the knowledge base.
+
+- **To learn more about the agent, read `AGENTS.md`**.
+- **To understand how to interact with the agent, see `GEMINI.md`**.
 
 ## Getting Started
 
@@ -27,12 +43,7 @@ To get the project up and running, follow these steps:
    cp .env.example .env
    ```
 
-3. Add your Codex API key and PostgreSQL connection string to the `.env` file:
-
-   ```
-   CODEX_API_KEY=your_codex_api_key
-   DATABASE_URL=your_postgres_connection_string_here
-   ```
+3. Add your API keys and PostgreSQL connection string to the `.env` file.
 
 4. Migrate the database schema:
 
@@ -44,5 +55,11 @@ To get the project up and running, follow these steps:
    ```bash
    npm run dev
    ```
+
+To interact with the Strata agent, use the `ai-start.sh` script:
+
+```bash
+./ai/ai-start.sh
+```
 
 Your project should now be running on [http://localhost:3000](http://localhost:3000).
