@@ -27,7 +27,7 @@ export PROJECT_PERSISTENCY_ASSETS="$SCRIPT_DIR/ai-meta/assets"
 export PROJECT_PERSISTENCY_ROOT="$PROJECT_ROOT"
 export PROJECT_PERSISTENCY_PROMPT="$PROMPT_FILE"
 
-DEFAULT_AI_CMD="codex"
+DEFAULT_AI_CMD="gemini-cli"
 AI_CMD_FROM_ARG=""
 FORWARD_ARGS=()
 
@@ -71,4 +71,4 @@ if [[ -n "${TITLE:-}" ]]; then
 fi
 
 echo "Streaming migration prompt from $PROMPT_FILE" >&2
-exec "$TARGET_AI_CMD" "${FORWARD_ARGS[@]}" "$PROMPT_PAYLOAD"
+exec "$TARGET_AI_CMD" "${FORWARD_ARGS[@]}" -p "$PROMPT_PAYLOAD"
